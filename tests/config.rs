@@ -39,10 +39,7 @@ fn empty_string_counts_as_missing() {
 
 #[test]
 fn auth_basic_username_defaults_to_owner() {
-    let env = fixture(&[
-        ("OWNER_SPOTIFY_USER_ID", "yudhyapw"),
-        ("AUTH_BASIC_PASSWORD", "hunter2"),
-    ]);
+    let env = fixture(&full_spotify_env());
     let cfg =
         Config::from_lookup(|k| env.get(k).map(|s| s.to_string())).expect("required vars present");
     assert_eq!(cfg.auth_basic_username, "owner");
@@ -52,11 +49,9 @@ fn auth_basic_username_defaults_to_owner() {
 
 #[test]
 fn auth_basic_username_env_override_is_respected() {
-    let env = fixture(&[
-        ("OWNER_SPOTIFY_USER_ID", "yudhyapw"),
-        ("AUTH_BASIC_PASSWORD", "hunter2"),
-        ("AUTH_BASIC_USERNAME", "yudhya"),
-    ]);
+    let mut pairs: Vec<(&'static str, &'static str)> = full_spotify_env().to_vec();
+    pairs.push(("AUTH_BASIC_USERNAME", "yudhya"));
+    let env = fixture(&pairs);
     let cfg =
         Config::from_lookup(|k| env.get(k).map(|s| s.to_string())).expect("required vars present");
     assert_eq!(cfg.auth_basic_username, "yudhya");
@@ -64,12 +59,66 @@ fn auth_basic_username_env_override_is_respected() {
 
 #[test]
 fn empty_auth_basic_username_falls_back_to_default() {
-    let env = fixture(&[
-        ("OWNER_SPOTIFY_USER_ID", "yudhyapw"),
-        ("AUTH_BASIC_PASSWORD", "hunter2"),
-        ("AUTH_BASIC_USERNAME", ""),
-    ]);
+    let mut pairs: Vec<(&'static str, &'static str)> = full_spotify_env().to_vec();
+    pairs.push(("AUTH_BASIC_USERNAME", ""));
+    let env = fixture(&pairs);
     let cfg =
         Config::from_lookup(|k| env.get(k).map(|s| s.to_string())).expect("required vars present");
     assert_eq!(cfg.auth_basic_username, "owner");
+}
+
+fn full_spotify_env() -> [(&'static str, &'static str); 5] {
+    [
+        ("OWNER_SPOTIFY_USER_ID", "yudhyapw"),
+        ("AUTH_BASIC_PASSWORD", "hunter2"),
+        ("SPOTIFY_CLIENT_ID", "client123"),
+        ("SPOTIFY_CLIENT_SECRET", "secret456"),
+        ("SPOTIFY_REDIRECT_URI", "https://musicapi.yudhyapw.com/auth/spotify/callback"),
+    ]
+}
+
+#[test]
+fn missing_spotify_client_id_is_reported_by_name() {
+    let pairs: Vec<(&'static str, &'static str)> = full_spotify_env()
+        .into_iter()
+        .filter(|(k, _)| *k != "SPOTIFY_CLIENT_ID")
+        .collect();
+    let env = fixture(&pairs);
+    let err = Config::from_lookup(|k| env.get(k).map(|s| s.to_string())).unwrap_err();
+    assert_eq!(err, ConfigError::Missing("SPOTIFY_CLIENT_ID"));
+}
+
+#[test]
+fn missing_spotify_client_secret_is_reported_by_name() {
+    let pairs: Vec<(&'static str, &'static str)> = full_spotify_env()
+        .into_iter()
+        .filter(|(k, _)| *k != "SPOTIFY_CLIENT_SECRET")
+        .collect();
+    let env = fixture(&pairs);
+    let err = Config::from_lookup(|k| env.get(k).map(|s| s.to_string())).unwrap_err();
+    assert_eq!(err, ConfigError::Missing("SPOTIFY_CLIENT_SECRET"));
+}
+
+#[test]
+fn missing_spotify_redirect_uri_is_reported_by_name() {
+    let pairs: Vec<(&'static str, &'static str)> = full_spotify_env()
+        .into_iter()
+        .filter(|(k, _)| *k != "SPOTIFY_REDIRECT_URI")
+        .collect();
+    let env = fixture(&pairs);
+    let err = Config::from_lookup(|k| env.get(k).map(|s| s.to_string())).unwrap_err();
+    assert_eq!(err, ConfigError::Missing("SPOTIFY_REDIRECT_URI"));
+}
+
+#[test]
+fn full_env_populates_all_spotify_fields() {
+    let env = fixture(&full_spotify_env());
+    let cfg =
+        Config::from_lookup(|k| env.get(k).map(|s| s.to_string())).expect("required vars present");
+    assert_eq!(cfg.spotify_client_id, "client123");
+    assert_eq!(cfg.spotify_client_secret, "secret456");
+    assert_eq!(
+        cfg.spotify_redirect_uri,
+        "https://musicapi.yudhyapw.com/auth/spotify/callback"
+    );
 }

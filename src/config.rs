@@ -5,6 +5,9 @@ use thiserror::Error;
 pub const OWNER_SPOTIFY_USER_ID: &str = "OWNER_SPOTIFY_USER_ID";
 pub const AUTH_BASIC_USERNAME: &str = "AUTH_BASIC_USERNAME";
 pub const AUTH_BASIC_PASSWORD: &str = "AUTH_BASIC_PASSWORD";
+pub const SPOTIFY_CLIENT_ID: &str = "SPOTIFY_CLIENT_ID";
+pub const SPOTIFY_CLIENT_SECRET: &str = "SPOTIFY_CLIENT_SECRET";
+pub const SPOTIFY_REDIRECT_URI: &str = "SPOTIFY_REDIRECT_URI";
 
 const DEFAULT_AUTH_BASIC_USERNAME: &str = "owner";
 
@@ -19,6 +22,9 @@ pub struct Config {
     pub owner_spotify_user_id: String,
     pub auth_basic_username: String,
     pub auth_basic_password: String,
+    pub spotify_client_id: String,
+    pub spotify_client_secret: String,
+    pub spotify_redirect_uri: String,
 }
 
 impl Config {
@@ -28,8 +34,8 @@ impl Config {
     }
 
     /// Build from any env source. Empty strings are treated as missing —
-    /// the spec's startup-required checks (criteria 22, 24) use this rule
-    /// so a stray `KEY=` in a `.env` file doesn't sneak past as "set".
+    /// the spec's startup-required checks use this rule so a stray `KEY=`
+    /// in a `.env` file doesn't sneak past as "set".
     pub fn from_lookup<F>(get: F) -> Result<Self, ConfigError>
     where
         F: Fn(&str) -> Option<String>,
@@ -47,6 +53,9 @@ impl Config {
             auth_basic_username: get(AUTH_BASIC_USERNAME)
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| DEFAULT_AUTH_BASIC_USERNAME.to_string()),
+            spotify_client_id: required(SPOTIFY_CLIENT_ID)?,
+            spotify_client_secret: required(SPOTIFY_CLIENT_SECRET)?,
+            spotify_redirect_uri: required(SPOTIFY_REDIRECT_URI)?,
         })
     }
 }
