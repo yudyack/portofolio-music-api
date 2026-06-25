@@ -18,7 +18,7 @@ pub enum ConfigError {
     Missing(&'static str),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct Config {
     pub owner_spotify_user_id: String,
     pub auth_basic_username: String,
@@ -27,6 +27,24 @@ pub struct Config {
     pub spotify_client_secret: String,
     pub spotify_redirect_uri: String,
     pub database_url: String,
+}
+
+/// Hand-rolled Debug that redacts secret fields. Pre-arms criterion 13:
+/// any future `tracing::*!(?config)` or `dbg!(config)` cannot leak the
+/// Client Secret or the admin password. The non-secret fields print
+/// verbatim so the diagnostic value of `?config` is preserved.
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("owner_spotify_user_id", &self.owner_spotify_user_id)
+            .field("auth_basic_username", &self.auth_basic_username)
+            .field("auth_basic_password", &"<redacted>")
+            .field("spotify_client_id", &self.spotify_client_id)
+            .field("spotify_client_secret", &"<redacted>")
+            .field("spotify_redirect_uri", &self.spotify_redirect_uri)
+            .field("database_url", &self.database_url)
+            .finish()
+    }
 }
 
 impl Config {

@@ -1,5 +1,5 @@
-//! Infrastructure layer. Every `sqlx::query*` call in this crate lives under
-//! this module (criterion 20, enforced by a static-grep test). Domain and
+//! Infrastructure layer. Every database query in this crate lives under this
+//! module (criterion 20, enforced by a static-grep test). Domain and
 //! app-services depend only on the `TokenRepository` trait re-exported from
 //! [`crate::domain::tokens`].
 
