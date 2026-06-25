@@ -15,8 +15,10 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use thiserror::Error;
 
 use crate::config::{Config, ConfigError};
+use crate::domain::spotify::SpotifyClient;
 use crate::domain::tokens::TokenRepository;
 use crate::infra::run_migrations;
+use crate::infra::spotify_client::ReqwestSpotifyClient;
 use crate::infra::sqlite_token_repo::SqliteTokenRepository;
 pub use crate::state::AppState;
 
@@ -34,6 +36,8 @@ pub enum InitError {
     SqliteConnect(String),
     #[error("migrations failed: {0}")]
     Migrate(String),
+    #[error("spotify client init failed: {0}")]
+    SpotifyClient(String),
 }
 
 /// Build the AppState and resolve the bind address. Called once at startup
@@ -66,8 +70,15 @@ pub async fn init() -> Result<(AppState, String), InitError> {
         .map_err(|e| InitError::Migrate(format!("{e}")))?;
 
     let repo: Arc<dyn TokenRepository> = Arc::new(SqliteTokenRepository::new(pool));
+    // Cycle 8: SpotifyClient is constructed once at startup. base_url
+    // excludes the `/v1` segment per the trait contract — callers pass
+    // the full path including the version. No handler reads `state.spotify`
+    // yet; cycle 10 wires the first `/v1/*` caller.
+    let spotify: Arc<dyn SpotifyClient> =
+        Arc::new(ReqwestSpotifyClient::new("https://api.spotify.com".to_string())
+            .map_err(|e| InitError::SpotifyClient(format!("{e}")))?);
     let bind_addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
-    Ok((AppState::new(repo), bind_addr))
+    Ok((AppState::new(repo, spotify), bind_addr))
 }
 
 /// Operational health snapshot. Always returns 200 (criterion 15) so the

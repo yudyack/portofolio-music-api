@@ -113,9 +113,11 @@ fn excludes_disallowed_scopes() {
 
 #[test]
 fn static_grep_no_implicit_grant_in_src_tree() {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
-    fn walk(dir: &Path, hits: &mut Vec<String>) {
+    // Cycle 8 widens the needle set per architect cycle-0-6 review
+    // item #2: catch URL-encoded and builder-pattern variants too.
+    fn walk(dir: &Path, hits: &mut Vec<(PathBuf, String)>) {
         for entry in std::fs::read_dir(dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
@@ -123,8 +125,14 @@ fn static_grep_no_implicit_grant_in_src_tree() {
                 walk(&path, hits);
             } else if path.extension().and_then(|s| s.to_str()) == Some("rs") {
                 let body = std::fs::read_to_string(&path).unwrap();
-                if body.contains("response_type=token") {
-                    hits.push(path.display().to_string());
+                for needle in [
+                    "response_type=token",
+                    "response_type%3Dtoken",
+                    "\"response_type\", \"token\"",
+                ] {
+                    if body.contains(needle) {
+                        hits.push((path.clone(), needle.to_string()));
+                    }
                 }
             }
         }
@@ -135,6 +143,6 @@ fn static_grep_no_implicit_grant_in_src_tree() {
     walk(&src, &mut hits);
     assert!(
         hits.is_empty(),
-        "criterion 16 static-grep: response_type=token forbidden in src/, but found in: {hits:#?}"
+        "criterion 16 static-grep: implicit-grant indicators forbidden in src/, but found: {hits:#?}"
     );
 }

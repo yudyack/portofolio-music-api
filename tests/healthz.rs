@@ -12,10 +12,26 @@ use async_trait::async_trait;
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
 use chrono::{DateTime, TimeZone, Utc};
+use music_api::domain::spotify::{SpotifyClient, SpotifyError};
 use music_api::domain::tokens::{RepoError, TokenRecord, TokenRepository};
 use music_api::AppState;
 use std::sync::Arc;
 use tower::ServiceExt;
+
+/// Cycle 8: AppState gained `spotify: Arc<dyn SpotifyClient>`. healthz
+/// does not call it, so a no-op stub satisfies the constructor. Cycle 10
+/// will add tests that actually exercise the field.
+struct NoopSpotifyClient;
+#[async_trait]
+impl SpotifyClient for NoopSpotifyClient {
+    async fn get_json(
+        &self,
+        _path: &str,
+        _access_token: &str,
+    ) -> Result<serde_json::Value, SpotifyError> {
+        Err(SpotifyError::Transport("unused in healthz tests".into()))
+    }
+}
 
 fn fixed_expires() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 7, 1, 12, 0, 0).unwrap()
@@ -56,7 +72,7 @@ impl TokenRepository for PrimedRepo {
 }
 
 async fn drive(repo: Arc<dyn TokenRepository>) -> serde_json::Value {
-    let state = AppState::new_for_test(repo);
+    let state = AppState::new_for_test(repo, Arc::new(NoopSpotifyClient));
     let app = music_api::app(state);
     let response = app
         .oneshot(

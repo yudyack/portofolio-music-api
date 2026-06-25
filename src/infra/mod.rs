@@ -1,9 +1,12 @@
-//! Infrastructure layer. Every database query in this crate lives under this
-//! module (criterion 20, enforced by a static-grep test). Domain and
-//! app-services depend only on the `TokenRepository` trait re-exported from
-//! [`crate::domain::tokens`].
+//! Infrastructure layer. Every database query in this crate lives under
+//! this module (criterion 20, enforced by tests/repository_pattern.rs).
+//! Cycle 8 extends the rule symmetrically: every reqwest + governor
+//! reference also lives under this module (enforced by
+//! tests/reqwest_isolation.rs). Domain and app-services depend only on
+//! the `TokenRepository` and `SpotifyClient` traits.
 
 pub mod sqlite_token_repo;
+pub mod spotify_client;
 
 use crate::domain::tokens::RepoError;
 use sqlx::SqlitePool;
