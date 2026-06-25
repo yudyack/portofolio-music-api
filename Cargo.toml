@@ -11,11 +11,14 @@ name = "music-api"
 path = "src/main.rs"
 
 [dependencies]
+anyhow = "1"
 async-trait = "0.1"
 axum = "0.8"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 governor = "0.7"
+http = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "http2"] }
+reqwest-middleware = "0.4"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros", "chrono"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
 serde = { version = "1", features = ["derive"] }
@@ -26,5 +29,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
 
 [dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }
 tower = { version = "0.5", features = ["util"] }
 wiremock = "0.6"

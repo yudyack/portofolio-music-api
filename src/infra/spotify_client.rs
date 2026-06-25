@@ -1,28 +1,37 @@
-//! Concrete reqwest-backed `SpotifyClient`. Every outbound call awaits a
-//! `governor` permit before sending, satisfying criterion 7
-//! (≤ 30 req / 30 s). The retry / Retry-After / 5xx-backoff middleware
-//! stack lands in cycle 9 — cycle 8 ships pacing only, with no retry
-//! middleware to keep the criterion-7 RED's arrival-count assertion
-//! unambiguous.
+//! Concrete reqwest-backed `SpotifyClient`. Outbound requests pass
+//! through a two-layer middleware chain assembled at construction:
+//!
+//!   RetryAfterMiddleware (outermost) → GovernorMiddleware (innermost)
+//!   → reqwest::Client
+//!
+//! Cycle 8 acquired the governor permit inline inside `get_json`;
+//! cycle 9 lifts both the permit and the 429 retry into middleware so
+//! the spec §5.5 invariant — "a 429 retry still consumes a token" —
+//! is enforced by chain composition. `tests/spotify_layering.rs` pins
+//! the invariant; `tests/spotify_retry_after.rs` pins the Retry-After
+//! timing within ±100 ms.
+//!
+//! 5xx exponential backoff (criterion 9) lands in cycle 10 — either by
+//! extending `RetryAfterMiddleware` with a status-5xx branch or by
+//! introducing a sibling backoff middleware between
+//! `RetryAfterMiddleware` and `GovernorMiddleware`. Either preserves
+//! the current attach order.
 
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use governor::clock::DefaultClock;
-use governor::state::{InMemoryState, NotKeyed};
 use governor::{Quota, RateLimiter};
-use reqwest::Client;
+use reqwest_middleware::ClientWithMiddleware;
 
 use crate::domain::spotify::{SpotifyClient, SpotifyError};
-
-type DirectRateLimiter = RateLimiter<NotKeyed, InMemoryState, DefaultClock>;
+use crate::infra::spotify_governor::GovernorMiddleware;
+use crate::infra::spotify_retry::RetryAfterMiddleware;
 
 pub struct ReqwestSpotifyClient {
     base_url: String,
-    client: Client,
-    limiter: Arc<DirectRateLimiter>,
+    client: ClientWithMiddleware,
 }
 
 impl ReqwestSpotifyClient {
@@ -37,18 +46,24 @@ impl ReqwestSpotifyClient {
     }
 
     /// Test-only constructor. The criterion-7 RED sizes a small quota
-    /// (`Quota::with_period(500 ms).allow_burst(2)`) so the test
-    /// finishes in ~4 s wall-clock instead of 30 s windows.
+    /// so the test finishes in seconds, not 30 s windows. The cycle-8
+    /// pacing test uses `with_period(500 ms).allow_burst(2)`; the
+    /// cycle-9 layering test uses `with_period(3 s).allow_burst(2)`.
     pub fn with_quota(base_url: String, quota: Quota) -> Result<Self, SpotifyError> {
-        let client = Client::builder()
+        let raw = reqwest::Client::builder()
             .build()
             .map_err(|e| SpotifyError::Transport(e.to_string()))?;
         let limiter = Arc::new(RateLimiter::direct(quota));
-        Ok(Self {
-            base_url,
-            client,
-            limiter,
-        })
+        let client = reqwest_middleware::ClientBuilder::new(raw)
+            // First .with() → outermost: a retry re-enters everything
+            // below it, which is where the layering invariant lives.
+            .with(RetryAfterMiddleware::new())
+            // Second .with() → innermost: every attempt (initial OR
+            // retry) acquires a fresh governor permit before reqwest
+            // sees the request.
+            .with(GovernorMiddleware { limiter })
+            .build();
+        Ok(Self { base_url, client })
     }
 }
 
@@ -59,9 +74,6 @@ impl SpotifyClient for ReqwestSpotifyClient {
         path: &str,
         access_token: &str,
     ) -> Result<serde_json::Value, SpotifyError> {
-        // Criterion 7: every outbound call passes through the bucket.
-        self.limiter.until_ready().await;
-
         let url = format!("{}{}", self.base_url, path);
         let response = self
             .client
