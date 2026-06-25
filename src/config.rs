@@ -8,6 +8,7 @@ pub const AUTH_BASIC_PASSWORD: &str = "AUTH_BASIC_PASSWORD";
 pub const SPOTIFY_CLIENT_ID: &str = "SPOTIFY_CLIENT_ID";
 pub const SPOTIFY_CLIENT_SECRET: &str = "SPOTIFY_CLIENT_SECRET";
 pub const SPOTIFY_REDIRECT_URI: &str = "SPOTIFY_REDIRECT_URI";
+pub const DATABASE_URL: &str = "DATABASE_URL";
 
 const DEFAULT_AUTH_BASIC_USERNAME: &str = "owner";
 
@@ -25,6 +26,7 @@ pub struct Config {
     pub spotify_client_id: String,
     pub spotify_client_secret: String,
     pub spotify_redirect_uri: String,
+    pub database_url: String,
 }
 
 impl Config {
@@ -56,6 +58,7 @@ impl Config {
             spotify_client_id: required(SPOTIFY_CLIENT_ID)?,
             spotify_client_secret: required(SPOTIFY_CLIENT_SECRET)?,
             spotify_redirect_uri: required(SPOTIFY_REDIRECT_URI)?,
+            database_url: required(DATABASE_URL)?,
         })
     }
 }

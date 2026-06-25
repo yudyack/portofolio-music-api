@@ -67,13 +67,14 @@ fn empty_auth_basic_username_falls_back_to_default() {
     assert_eq!(cfg.auth_basic_username, "owner");
 }
 
-fn full_spotify_env() -> [(&'static str, &'static str); 5] {
+fn full_spotify_env() -> [(&'static str, &'static str); 6] {
     [
         ("OWNER_SPOTIFY_USER_ID", "yudhyapw"),
         ("AUTH_BASIC_PASSWORD", "hunter2"),
         ("SPOTIFY_CLIENT_ID", "client123"),
         ("SPOTIFY_CLIENT_SECRET", "secret456"),
         ("SPOTIFY_REDIRECT_URI", "https://musicapi.yudhyapw.com/auth/spotify/callback"),
+        ("DATABASE_URL", "sqlite::memory:"),
     ]
 }
 
@@ -121,4 +122,16 @@ fn full_env_populates_all_spotify_fields() {
         cfg.spotify_redirect_uri,
         "https://musicapi.yudhyapw.com/auth/spotify/callback"
     );
+    assert_eq!(cfg.database_url, "sqlite::memory:");
+}
+
+#[test]
+fn missing_database_url_is_reported_by_name() {
+    let pairs: Vec<(&'static str, &'static str)> = full_spotify_env()
+        .into_iter()
+        .filter(|(k, _)| *k != "DATABASE_URL")
+        .collect();
+    let env = fixture(&pairs);
+    let err = Config::from_lookup(|k| env.get(k).map(|s| s.to_string())).unwrap_err();
+    assert_eq!(err, ConfigError::Missing("DATABASE_URL"));
 }

@@ -13,6 +13,7 @@ fn test_config() -> Config {
             "SPOTIFY_REDIRECT_URI",
             "https://musicapi.yudhyapw.com/auth/spotify/callback",
         ),
+        ("DATABASE_URL", "sqlite::memory:"),
     ]
     .into_iter()
     .collect();

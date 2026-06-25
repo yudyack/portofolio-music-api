@@ -1,4 +1,6 @@
 pub mod config;
+pub mod domain;
+pub mod infra;
 pub mod oauth;
 
 use axum::{routing::get, Json, Router};
