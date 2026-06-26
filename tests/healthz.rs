@@ -12,11 +12,39 @@ use async_trait::async_trait;
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
 use chrono::{DateTime, TimeZone, Utc};
+use music_api::app::state_store::StateStore;
+use music_api::config::Config;
+use music_api::domain::auth_state::AuthState;
+use music_api::domain::oauth_client::{RefreshedTokens, TokenExchangeError, TokenExchanger};
 use music_api::domain::spotify::{SpotifyClient, SpotifyError};
 use music_api::domain::tokens::{RepoError, TokenRecord, TokenRepository};
 use music_api::AppState;
 use std::sync::Arc;
 use tower::ServiceExt;
+
+/// healthz reads only `tokens`; the other AppState fields need stub values.
+struct NoopExchanger;
+#[async_trait]
+impl TokenExchanger for NoopExchanger {
+    async fn refresh(&self, _: &str) -> Result<RefreshedTokens, TokenExchangeError> {
+        Err(TokenExchangeError::Transport("unused".into()))
+    }
+    async fn exchange_code(&self, _: &str, _: &str) -> Result<RefreshedTokens, TokenExchangeError> {
+        Err(TokenExchangeError::Transport("unused".into()))
+    }
+}
+
+fn test_config() -> Config {
+    Config {
+        owner_spotify_user_id: "yudhyapw".into(),
+        auth_basic_username: "owner".into(),
+        auth_basic_password: "pw".into(),
+        spotify_client_id: "cid".into(),
+        spotify_client_secret: "secret".into(),
+        spotify_redirect_uri: "http://127.0.0.1:8080/auth/spotify/callback".into(),
+        database_url: "sqlite::memory:".into(),
+    }
+}
 
 /// Cycle 8: AppState gained `spotify: Arc<dyn SpotifyClient>`. healthz
 /// does not call it, so a no-op stub satisfies the constructor. Cycle 10
@@ -72,7 +100,14 @@ impl TokenRepository for PrimedRepo {
 }
 
 async fn drive(repo: Arc<dyn TokenRepository>) -> serde_json::Value {
-    let state = AppState::new_for_test(repo, Arc::new(NoopSpotifyClient));
+    let state = AppState::new_for_test(
+        Arc::new(test_config()),
+        repo,
+        Arc::new(NoopSpotifyClient),
+        Arc::new(NoopExchanger),
+        Arc::new(AuthState::new()),
+        Arc::new(StateStore::new()),
+    );
     let app = music_api::app(state);
     let response = app
         .oneshot(

@@ -37,7 +37,6 @@ fn src_files() -> Vec<(PathBuf, String)> {
 }
 
 #[test]
-#[ignore = "Tripwire: unignore when cycle 7+ lands the Basic-auth handler. Cargo.toml must list `subtle` and src/ must import subtle::ConstantTimeEq."]
 fn auth_basic_password_compare_uses_subtle_constant_time() {
     let manifest = cargo_toml();
     assert!(
@@ -58,7 +57,6 @@ fn auth_basic_password_compare_uses_subtle_constant_time() {
 }
 
 #[test]
-#[ignore = "Tripwire: unignore when cycle 7+ lands the Basic-auth handler. Forbids naive string equality on the password field."]
 fn auth_basic_password_does_not_use_string_equality() {
     let src = src_files();
     let forbidden_patterns = [

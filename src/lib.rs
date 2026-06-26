@@ -3,6 +3,7 @@ pub mod config;
 pub mod domain;
 pub mod infra;
 pub mod oauth;
+pub mod routes;
 pub mod state;
 
 use std::str::FromStr;
@@ -15,12 +16,16 @@ use serde::Serialize;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use thiserror::Error;
 
+use crate::app::state_store::StateStore;
 use crate::config::{Config, ConfigError};
+use crate::domain::auth_state::AuthState;
+use crate::domain::oauth_client::TokenExchanger;
 use crate::domain::spotify::SpotifyClient;
 use crate::domain::tokens::TokenRepository;
 use crate::infra::run_migrations;
 use crate::infra::spotify_client::ReqwestSpotifyClient;
 use crate::infra::sqlite_token_repo::SqliteTokenRepository;
+use crate::infra::token_exchanger::ReqwestTokenExchanger;
 pub use crate::state::AppState;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -39,6 +44,8 @@ pub enum InitError {
     Migrate(String),
     #[error("spotify client init failed: {0}")]
     SpotifyClient(String),
+    #[error("oauth client init failed: {0}")]
+    OAuthClient(String),
 }
 
 /// Build the AppState and resolve the bind address. Called once at startup
@@ -71,15 +78,32 @@ pub async fn init() -> Result<(AppState, String), InitError> {
         .map_err(|e| InitError::Migrate(format!("{e}")))?;
 
     let repo: Arc<dyn TokenRepository> = Arc::new(SqliteTokenRepository::new(pool));
-    // Cycle 8: SpotifyClient is constructed once at startup. base_url
-    // excludes the `/v1` segment per the trait contract — callers pass
-    // the full path including the version. No handler reads `state.spotify`
-    // yet; cycle 10 wires the first `/v1/*` caller.
+    // base_url excludes `/v1`; callers pass the full path (e.g. `/v1/me`).
     let spotify: Arc<dyn SpotifyClient> =
         Arc::new(ReqwestSpotifyClient::new("https://api.spotify.com".to_string())
             .map_err(|e| InitError::SpotifyClient(format!("{e}")))?);
+    let oauth: Arc<dyn TokenExchanger> = Arc::new(
+        ReqwestTokenExchanger::new(
+            "https://accounts.spotify.com/api/token".to_string(),
+            config.spotify_client_id.clone(),
+            config.spotify_client_secret.clone(),
+        )
+        .map_err(|e| InitError::OAuthClient(format!("{e}")))?,
+    );
+    let auth_state = Arc::new(AuthState::new());
+    let state_store = Arc::new(StateStore::new());
     let bind_addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
-    Ok((AppState::new(repo, spotify), bind_addr))
+    Ok((
+        AppState::new(
+            Arc::new(config),
+            repo,
+            spotify,
+            oauth,
+            auth_state,
+            state_store,
+        ),
+        bind_addr,
+    ))
 }
 
 /// Operational health snapshot. Always returns 200 (criterion 15) so the
@@ -119,5 +143,7 @@ async fn healthz(State(state): State<AppState>) -> Json<Health> {
 pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
+        .route("/auth/spotify/login", get(routes::auth::login))
+        .route("/auth/spotify/callback", get(routes::auth::callback))
         .with_state(state)
 }

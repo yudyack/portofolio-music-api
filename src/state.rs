@@ -1,41 +1,54 @@
-//! Handler-visible application state. Threaded into every Router branch via
-//! `Router::with_state(state)`. Cloning is cheap — every field is `Arc<…>`.
-//!
-//! Cycle 7 introduced `tokens`. Cycle 8 adds `spotify`. The forcing
-//! function works as designed: every test fixture that constructed
-//! `AppState::new_for_test(repo)` grows ONE argument (the spotify stub),
-//! not every struct-literal site. Future cycles will continue the
-//! pattern as `config`, `rate_limiter`, `refresh_state`, etc. land.
+//! Handler-visible application state. Cloned into every Router branch.
+//! Every field is `Arc<…>` so cloning is cheap.
 
 use std::sync::Arc;
 
+use crate::app::state_store::StateStore;
+use crate::config::Config;
+use crate::domain::auth_state::AuthState;
+use crate::domain::oauth_client::TokenExchanger;
 use crate::domain::spotify::SpotifyClient;
 use crate::domain::tokens::TokenRepository;
 
 #[derive(Clone)]
 pub struct AppState {
+    pub(crate) config: Arc<Config>,
     pub(crate) tokens: Arc<dyn TokenRepository>,
-    // First reader lands in cycle 10/11 when a `/v1/*` handler invokes
-    // SpotifyClient. The field is wired through `init()` and exercised by
-    // tests/spotify_pacing.rs against the concrete impl; the `#[allow]`
-    // is removed in the cycle that adds the handler.
-    #[allow(dead_code)]
     pub(crate) spotify: Arc<dyn SpotifyClient>,
+    pub(crate) oauth: Arc<dyn TokenExchanger>,
+    pub(crate) auth_state: Arc<AuthState>,
+    pub(crate) state_store: Arc<StateStore>,
 }
 
 impl AppState {
-    /// Production constructor. Used by `init()`.
-    pub fn new(tokens: Arc<dyn TokenRepository>, spotify: Arc<dyn SpotifyClient>) -> Self {
-        Self { tokens, spotify }
-    }
-
-    /// Test-only constructor. The cycle 8 grew the second required
-    /// field — see this constructor for the seam. The next cycle that
-    /// adds a required field should mirror the same pattern.
-    pub fn new_for_test(
+    pub fn new(
+        config: Arc<Config>,
         tokens: Arc<dyn TokenRepository>,
         spotify: Arc<dyn SpotifyClient>,
+        oauth: Arc<dyn TokenExchanger>,
+        auth_state: Arc<AuthState>,
+        state_store: Arc<StateStore>,
     ) -> Self {
-        Self { tokens, spotify }
+        Self {
+            config,
+            tokens,
+            spotify,
+            oauth,
+            auth_state,
+            state_store,
+        }
+    }
+
+    /// Test constructor — same fields. Kept distinct from `new` so test
+    /// wiring is greppable.
+    pub fn new_for_test(
+        config: Arc<Config>,
+        tokens: Arc<dyn TokenRepository>,
+        spotify: Arc<dyn SpotifyClient>,
+        oauth: Arc<dyn TokenExchanger>,
+        auth_state: Arc<AuthState>,
+        state_store: Arc<StateStore>,
+    ) -> Self {
+        Self::new(config, tokens, spotify, oauth, auth_state, state_store)
     }
 }
