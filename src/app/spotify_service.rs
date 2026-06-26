@@ -64,12 +64,12 @@ impl SpotifyService {
     }
 
     /// GET a `/v1/*` path as the owner, transparently refreshing on 401.
+    ///
+    /// Note: this does NOT short-circuit when `AuthState` is already
+    /// `NeedsReauth`. Refusing calls in that state — and reporting it via
+    /// `/healthz` + `/v1/* 503` — is criterion 6's read-side, which lands
+    /// with those handlers. Cycle 11 only SETS the flag (on `invalid_grant`).
     pub async fn get(&self, path: &str) -> Result<Value, ServiceError> {
-        // Already known dead — don't burn an upstream call.
-        if self.auth_state.needs_reauth() {
-            return Err(ServiceError::NeedsReauth);
-        }
-
         let token = self
             .tokens
             .get()
