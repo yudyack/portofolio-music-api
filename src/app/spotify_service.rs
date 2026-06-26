@@ -11,15 +11,18 @@
 //! still non-2xx, surfaces as `ServiceError::Upstream` — no second retry,
 //! no tight loop.
 //!
-//! Single-flight refresh (criterion 26 — collapsing concurrent 401s into
-//! ONE refresh POST) is a separate criterion and is NOT implemented here
-//! yet; today two concurrent 401s could each trigger a refresh. That lands
-//! in its own cycle.
+//! Single-flight refresh (criterion 26): concurrent 401s collapse into ONE
+//! refresh POST. A `tokio::sync::Mutex` serializes the refresh critical
+//! section; the first caller through refreshes and upserts, every later
+//! caller re-reads the now-rotated token and reuses it instead of POSTing
+//! again. The async mutex is held across the refresh `.await` deliberately
+//! — waiters block until the in-flight refresh resolves.
 
 use std::sync::Arc;
 
 use chrono::{Duration, Utc};
 use serde_json::Value;
+use tokio::sync::Mutex;
 
 use crate::domain::auth_state::AuthState;
 use crate::domain::oauth_client::{TokenExchangeError, TokenExchanger};
@@ -46,6 +49,9 @@ pub struct SpotifyService {
     spotify: Arc<dyn SpotifyClient>,
     oauth: Arc<dyn TokenExchanger>,
     auth_state: Arc<AuthState>,
+    /// Serializes the refresh critical section so concurrent 401s collapse
+    /// into one refresh POST (criterion 26).
+    refresh_lock: Mutex<()>,
 }
 
 impl SpotifyService {
@@ -60,6 +66,7 @@ impl SpotifyService {
             spotify,
             oauth,
             auth_state,
+            refresh_lock: Mutex::new(()),
         }
     }
 
@@ -85,36 +92,68 @@ impl SpotifyService {
     }
 
     /// Refresh the token then retry the call exactly once.
+    ///
+    /// Single-flight (criterion 26): the refresh critical section runs under
+    /// `refresh_lock`, so concurrent 401s serialize. The first caller through
+    /// refreshes and upserts; every later caller observes the rotated token
+    /// on re-read and reuses it without POSTing again. The lock is released
+    /// before the retry so the retries themselves run concurrently.
     async fn refresh_and_retry(
         &self,
         path: &str,
         current: TokenRecord,
     ) -> Result<Value, ServiceError> {
-        let refreshed = match self.oauth.refresh(&current.refresh_token).await {
-            Ok(r) => r,
-            Err(TokenExchangeError::InvalidGrant) => {
-                // Dead refresh token: flip state, keep stored tokens for the
-                // owner's reauth to overwrite.
-                self.auth_state.set_needs_reauth();
+        let new_access = {
+            let _guard = self.refresh_lock.lock().await;
+
+            // A concurrent caller already found the refresh token dead — do
+            // not re-POST it. (This is criterion-26 latch logic, NOT the
+            // criterion-6 entry guard, which lives at the handler layer.)
+            if self.auth_state.needs_reauth() {
                 return Err(ServiceError::NeedsReauth);
             }
-            Err(e) => return Err(ServiceError::Upstream(e.to_string())),
-        };
 
-        let new_access = refreshed.access_token.clone();
-        let record = TokenRecord {
-            access_token: refreshed.access_token,
-            // Spotify only returns a refresh_token when it rotates one;
-            // otherwise keep the existing token.
-            refresh_token: refreshed.refresh_token.unwrap_or(current.refresh_token),
-            expires_at: Utc::now() + Duration::seconds(refreshed.expires_in),
-            scope: refreshed.scope.unwrap_or(current.scope),
-            owner_id: current.owner_id,
-        };
-        self.tokens
-            .upsert(record)
-            .await
-            .map_err(|e| ServiceError::Repo(e.to_string()))?;
+            // A concurrent caller may have refreshed while we waited for the
+            // lock. If the stored access token has moved on, reuse it.
+            let latest = self
+                .tokens
+                .get()
+                .await
+                .map_err(|e| ServiceError::Repo(e.to_string()))?
+                .ok_or(ServiceError::NeedsReauth)?;
+
+            if latest.access_token != current.access_token {
+                latest.access_token
+            } else {
+                // We are the first concurrent caller: perform the refresh.
+                let refreshed = match self.oauth.refresh(&current.refresh_token).await {
+                    Ok(r) => r,
+                    Err(TokenExchangeError::InvalidGrant) => {
+                        // Dead refresh token: flip state, keep stored tokens
+                        // for the owner's reauth to overwrite.
+                        self.auth_state.set_needs_reauth();
+                        return Err(ServiceError::NeedsReauth);
+                    }
+                    Err(e) => return Err(ServiceError::Upstream(e.to_string())),
+                };
+
+                let new_access = refreshed.access_token.clone();
+                let record = TokenRecord {
+                    access_token: refreshed.access_token,
+                    // Spotify only returns a refresh_token when it rotates
+                    // one; otherwise keep the existing token.
+                    refresh_token: refreshed.refresh_token.unwrap_or(current.refresh_token),
+                    expires_at: Utc::now() + Duration::seconds(refreshed.expires_in),
+                    scope: refreshed.scope.unwrap_or(current.scope),
+                    owner_id: current.owner_id,
+                };
+                self.tokens
+                    .upsert(record)
+                    .await
+                    .map_err(|e| ServiceError::Repo(e.to_string()))?;
+                new_access
+            }
+        }; // refresh_lock released here — retries run concurrently.
 
         // Retry ONCE with the fresh access token. A second non-2xx is an
         // upstream failure — no further retry.
