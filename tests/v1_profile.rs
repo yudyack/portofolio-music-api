@@ -184,10 +184,18 @@ async fn profile_second_request_hits_cache_no_second_spotify_call() {
     let (router, counter) = build_app(spotify, Arc::new(AuthState::new()));
 
     let (s1, _) = get(&router, "/v1/profile").await;
+    let after_first = counter.calls();
     let (s2, _) = get(&router, "/v1/profile").await;
     assert_eq!(s1, StatusCode::OK);
     assert_eq!(s2, StatusCode::OK);
-    assert_eq!(counter.calls(), 1, "second request must serve from cache");
+    // First request fires multiple Spotify calls (me + following + playlists);
+    // exact count varies as the aggregation evolves. The cache invariant is
+    // that the SECOND request adds zero.
+    assert_eq!(
+        counter.calls(),
+        after_first,
+        "second request must serve from cache (no new Spotify calls)",
+    );
 }
 
 #[tokio::test]

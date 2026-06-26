@@ -11,10 +11,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::State;
+use axum::http::{HeaderValue, Method};
 use axum::{routing::get, Json, Router};
 use serde::Serialize;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use thiserror::Error;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use crate::app::state_store::StateStore;
 use crate::config::{Config, ConfigError};
@@ -145,11 +147,36 @@ async fn healthz(State(state): State<AppState>) -> Json<Health> {
 }
 
 pub fn app(state: AppState) -> Router {
+    // Criterion 14: CORS layered ONLY on /v1/* (the public data plane the
+    // leptos frontend calls cross-origin). /auth/* is browser-redirect-only
+    // and /healthz is operational — neither emits CORS headers per spec §5.7.
+    let v1 = Router::new()
+        .route("/v1/profile", get(routes::v1::profile))
+        .route("/v1/now", get(routes::v1::now))
+        .route("/v1/recent", get(routes::v1::recent))
+        .route("/v1/top/tracks", get(routes::v1::top_tracks))
+        .route("/v1/playlists", get(routes::v1::playlists))
+        .layer(cors_layer());
+
     Router::new()
         .route("/healthz", get(healthz))
         .route("/auth/spotify/login", get(routes::auth::login))
         .route("/auth/spotify/callback", get(routes::auth::callback))
-        .route("/v1/profile", get(routes::v1::profile))
-        .route("/v1/now", get(routes::v1::now))
+        .merge(v1)
         .with_state(state)
+}
+
+fn cors_layer() -> CorsLayer {
+    // Allowlist mirrors spec §5.7: production origins + localhost for dev.
+    // Wildcard `127.0.0.1:*` is approximated by a predicate so any dev port
+    // works (vite/leptos default ports vary).
+    let allow_origin = AllowOrigin::predicate(|origin: &HeaderValue, _req| {
+        let Ok(s) = origin.to_str() else { return false };
+        matches!(s, "https://yudhyapw.com" | "https://www.yudhyapw.com")
+            || s.starts_with("http://127.0.0.1:")
+            || s.starts_with("http://localhost:")
+    });
+    CorsLayer::new()
+        .allow_origin(allow_origin)
+        .allow_methods([Method::GET])
 }
