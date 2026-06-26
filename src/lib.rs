@@ -150,5 +150,6 @@ pub fn app(state: AppState) -> Router {
         .route("/auth/spotify/login", get(routes::auth::login))
         .route("/auth/spotify/callback", get(routes::auth::callback))
         .route("/v1/profile", get(routes::v1::profile))
+        .route("/v1/now", get(routes::v1::now))
         .with_state(state)
 }

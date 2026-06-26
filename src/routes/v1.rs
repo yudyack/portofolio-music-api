@@ -24,6 +24,9 @@ use crate::state::AppState;
 const PROFILE_CACHE_KEY: &str = "v1:profile";
 const PROFILE_TTL: Duration = Duration::from_secs(15 * 60);
 
+const NOW_CACHE_KEY: &str = "v1:now";
+const NOW_TTL: Duration = Duration::from_secs(10);
+
 #[derive(Serialize)]
 pub struct ProfileBody {
     pub display_name: Option<String>,
@@ -80,6 +83,93 @@ fn needs_reauth() -> Response {
         Json(json!({"error": "needs_reauth"})),
     )
         .into_response()
+}
+
+/// GET /v1/now — currently playing (criterion 17 + §5.7 shape).
+///
+/// Spotify returns 204 when no device is active; criterion 17 requires
+/// that surface as `200 {playing:false}`, NOT a 500. SpotifyClient
+/// surfaces 204 as `Ok(None)` (cycle 15 refactor); the handler maps it
+/// to the empty-playing body and caches it.
+pub async fn now(State(state): State<AppState>) -> Response {
+    if state.auth_state.needs_reauth() {
+        return needs_reauth();
+    }
+
+    if let Some(cached) = state.cache.get(NOW_CACHE_KEY) {
+        return (StatusCode::OK, Json(cached)).into_response();
+    }
+
+    let payload = match state.spotify_service.get("/v1/me/player").await {
+        Ok(Some(v)) => map_now(&v),
+        Ok(None) => json!({"playing": false}),
+        Err(ServiceError::NeedsReauth) => return needs_reauth(),
+        Err(ServiceError::Upstream(e)) => {
+            tracing::warn!(error = %e, "spotify /v1/me/player failed");
+            return (StatusCode::BAD_GATEWAY, Json(json!({"error": "upstream"})))
+                .into_response();
+        }
+        Err(ServiceError::Repo(e)) => {
+            tracing::error!(error = %e, "token repo lookup failed");
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "repo"})))
+                .into_response();
+        }
+    };
+
+    state.cache.put(NOW_CACHE_KEY.to_string(), payload.clone(), NOW_TTL);
+    (StatusCode::OK, Json(payload)).into_response()
+}
+
+/// Map Spotify `/me/player` JSON to the §5.7 now-playing shape.
+fn map_now(p: &Value) -> Value {
+    let item = match p.get("item") {
+        Some(i) if !i.is_null() => i,
+        _ => return json!({"playing": false}),
+    };
+
+    let track = item.get("name").and_then(Value::as_str).unwrap_or_default();
+    let artist = item
+        .get("artists")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|a| a.get("name").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
+    let album = item
+        .get("album")
+        .and_then(|a| a.get("name"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let cover = item
+        .get("album")
+        .and_then(|a| a.get("images"))
+        .and_then(Value::as_array)
+        .and_then(|arr| arr.first())
+        .and_then(|img| img.get("url"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let progress_ms = p.get("progress_ms").and_then(Value::as_u64).unwrap_or(0);
+    let duration_ms = item.get("duration_ms").and_then(Value::as_u64).unwrap_or(0);
+    let playing = p.get("is_playing").and_then(Value::as_bool).unwrap_or(false);
+    let device = p
+        .get("device")
+        .and_then(|d| d.get("name"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+
+    json!({
+        "playing": playing,
+        "track": track,
+        "artist": artist,
+        "album": album,
+        "cover": cover,
+        "progress_ms": progress_ms,
+        "duration_ms": duration_ms,
+        "device": device,
+    })
 }
 
 /// Map Spotify `/me` JSON to the §5.7 profile shape. Picks the largest
