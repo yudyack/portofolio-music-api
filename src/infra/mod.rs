@@ -10,6 +10,7 @@ pub mod spotify_backoff;
 pub mod spotify_client;
 pub(crate) mod spotify_governor;
 pub(crate) mod spotify_retry;
+pub mod token_exchanger;
 
 use crate::domain::tokens::RepoError;
 use sqlx::SqlitePool;

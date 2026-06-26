@@ -5,5 +5,6 @@
 //! the `SpotifyClient` trait lives here; the reqwest/governor stack lives
 //! under `infra`. The repository-pattern and reqwest-isolation static-grep
 //! tests enforce this.
+pub mod oauth_client;
 pub mod spotify;
 pub mod tokens;
