@@ -125,7 +125,7 @@ async fn five_concurrent_401s_dispatch_exactly_one_refresh_over_real_http() {
             .await
             .expect("task did not panic")
             .expect("each concurrent call must succeed after the shared refresh");
-        assert_eq!(v, json!({"ok": true}));
+        assert_eq!(v, Some(json!({"ok": true})));
     }
 
     // Criterion 26: exactly one refresh POST reached the token endpoint.

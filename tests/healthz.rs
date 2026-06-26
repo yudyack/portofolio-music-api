@@ -56,7 +56,7 @@ impl SpotifyClient for NoopSpotifyClient {
         &self,
         _path: &str,
         _access_token: &str,
-    ) -> Result<serde_json::Value, SpotifyError> {
+    ) -> Result<Option<serde_json::Value>, SpotifyError> {
         Err(SpotifyError::Transport("unused in healthz tests".into()))
     }
 }

@@ -46,9 +46,9 @@ impl CountingSpotify {
 
 #[async_trait]
 impl SpotifyClient for CountingSpotify {
-    async fn get_json(&self, _path: &str, _token: &str) -> Result<Value, SpotifyError> {
+    async fn get_json(&self, _path: &str, _token: &str) -> Result<Option<Value>, SpotifyError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        Ok(self.response.clone())
+        Ok(Some(self.response.clone()))
     }
 }
 

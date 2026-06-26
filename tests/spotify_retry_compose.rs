@@ -73,7 +73,7 @@ async fn five_hundred_then_429_then_200_traverses_both_retry_layers() {
         .expect("must succeed after 5xx-backoff then 429-Retry-After");
     let elapsed = started.elapsed();
 
-    assert_eq!(v, json!({"id": "ok"}));
+    assert_eq!(v, Some(json!({"id": "ok"})));
     // ~100 ms backoff + ~1 s Retry-After. Lower bound proves BOTH waits
     // happened (a single layer would be < 1 s or < 0.2 s).
     assert!(

@@ -83,7 +83,8 @@ async fn spotify_429_retry_consumes_a_second_governor_token() {
     let r1 = tokio::time::timeout(Duration::from_secs(20), client.get_json("/v1/me", "tok"))
         .await
         .expect("call 1 watchdog: must not exceed 20 s")
-        .expect("call 1 must succeed (429 → Retry-After → retry → 200)");
+        .expect("call 1 must succeed (429 → Retry-After → retry → 200)")
+        .expect("body present");
     let t_after_call1 = t0.elapsed();
     assert_eq!(r1["id"], "call1", "call 1 must return the second-arm body");
 
@@ -92,7 +93,8 @@ async fn spotify_429_retry_consumes_a_second_governor_token() {
     let r2 = tokio::time::timeout(Duration::from_secs(20), client.get_json("/v1/me", "tok"))
         .await
         .expect("call 2 watchdog: must not exceed 20 s")
-        .expect("call 2 must succeed against the third arm");
+        .expect("call 2 must succeed against the third arm")
+        .expect("body present");
     let t_after_call2 = t0.elapsed();
     assert_eq!(r2["id"], "call2", "call 2 must return the third-arm body");
 

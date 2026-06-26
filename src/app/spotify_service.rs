@@ -72,11 +72,15 @@ impl SpotifyService {
 
     /// GET a `/v1/*` path as the owner, transparently refreshing on 401.
     ///
+    /// `Ok(None)` is the HTTP 204 No Content case — Spotify uses it on
+    /// `/me/player` to mean "nothing currently playing" (criterion 17).
+    /// Handlers map that to a domain-specific shape (e.g. `playing:false`).
+    ///
     /// Note: this does NOT short-circuit when `AuthState` is already
     /// `NeedsReauth`. Refusing calls in that state — and reporting it via
-    /// `/healthz` + `/v1/* 503` — is criterion 6's read-side, which lands
-    /// with those handlers. Cycle 11 only SETS the flag (on `invalid_grant`).
-    pub async fn get(&self, path: &str) -> Result<Value, ServiceError> {
+    /// `/healthz` + `/v1/* 503` — is criterion 6's read-side, which lives
+    /// at the handler layer (the entry guard).
+    pub async fn get(&self, path: &str) -> Result<Option<Value>, ServiceError> {
         let token = self
             .tokens
             .get()
@@ -102,7 +106,7 @@ impl SpotifyService {
         &self,
         path: &str,
         current: TokenRecord,
-    ) -> Result<Value, ServiceError> {
+    ) -> Result<Option<Value>, ServiceError> {
         let new_access = {
             let _guard = self.refresh_lock.lock().await;
 

@@ -30,9 +30,13 @@ struct TokenAwareSpotify;
 
 #[async_trait]
 impl SpotifyClient for TokenAwareSpotify {
-    async fn get_json(&self, _path: &str, access_token: &str) -> Result<Value, SpotifyError> {
+    async fn get_json(
+        &self,
+        _path: &str,
+        access_token: &str,
+    ) -> Result<Option<Value>, SpotifyError> {
         if access_token == "NEW_ACCESS" {
-            Ok(json!({"ok": true}))
+            Ok(Some(json!({"ok": true})))
         } else {
             Err(SpotifyError::Status(401))
         }
@@ -128,7 +132,7 @@ fn seed() -> TokenRecord {
 
 async fn drive_five(
     svc: Arc<SpotifyService>,
-) -> Vec<Result<Value, ServiceError>> {
+) -> Vec<Result<Option<Value>, ServiceError>> {
     let mut handles = Vec::new();
     for _ in 0..5 {
         let s = svc.clone();
@@ -164,7 +168,10 @@ async fn five_concurrent_401s_trigger_exactly_one_refresh() {
     );
     // All five callers succeed on retry with the shared new token.
     for r in &results {
-        assert_eq!(r.as_ref().expect("each call succeeds"), &json!({"ok": true}));
+        assert_eq!(
+            r.as_ref().expect("each call succeeds"),
+            &Some(json!({"ok": true})),
+        );
     }
     // The rotated token-set is persisted exactly once.
     let stored = repo.snapshot().unwrap();

@@ -48,7 +48,13 @@ pub async fn profile(State(state): State<AppState>) -> Response {
     }
 
     let raw = match state.spotify_service.get("/v1/me").await {
-        Ok(v) => v,
+        // /v1/me always returns a body; treat 204 as upstream weirdness.
+        Ok(Some(v)) => v,
+        Ok(None) => {
+            tracing::warn!("/v1/me returned 204 unexpectedly");
+            return (StatusCode::BAD_GATEWAY, Json(json!({"error": "upstream"})))
+                .into_response();
+        }
         Err(ServiceError::NeedsReauth) => return needs_reauth(),
         Err(ServiceError::Upstream(e)) => {
             tracing::warn!(error = %e, "spotify /v1/me failed");

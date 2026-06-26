@@ -122,7 +122,7 @@ async fn end_to_end_401_refreshes_persists_rotated_set_and_retries() {
     let svc = build_service(&server, repo.clone(), auth_state.clone());
 
     let v = svc.get("/v1/me").await.expect("must succeed after refresh+retry");
-    assert_eq!(v, json!({"playing": false}));
+    assert_eq!(v, Some(json!({"playing": false})));
 
     // Rotated token-set persisted to SQLite.
     let stored = repo.get().await.unwrap().expect("token row present");

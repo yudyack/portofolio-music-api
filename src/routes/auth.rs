@@ -88,7 +88,13 @@ pub async fn callback(State(state): State<AppState>, Query(q): Query<CallbackQue
         }
     };
     let me = match state.spotify.get_json("/v1/me", &tokens.access_token).await {
-        Ok(v) => v,
+        // /v1/me always returns 200 with a body; a 204 here would be a
+        // Spotify API contract change, surface as upstream failure.
+        Ok(Some(v)) => v,
+        Ok(None) => {
+            tracing::warn!("/v1/me returned 204 unexpectedly");
+            return (StatusCode::BAD_GATEWAY, "profile fetch failed").into_response();
+        }
         Err(e) => {
             tracing::warn!(error = %e, "profile fetch failed");
             return (StatusCode::BAD_GATEWAY, "profile fetch failed").into_response();

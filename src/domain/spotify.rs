@@ -38,6 +38,10 @@ pub trait SpotifyClient: Send + Sync {
     /// `Authorization: Bearer {access_token}`, parse the 2xx body as
     /// JSON.
     ///
+    /// Returns `Ok(None)` on HTTP 204 No Content — Spotify uses this
+    /// for "nothing currently playing" on `/me/player` (criterion 17).
+    /// Every other 2xx returns `Ok(Some(value))`.
+    ///
     /// `path` is appended to `base_url` verbatim — callers pass the
     /// full Spotify path including the version segment
     /// (e.g. `"/v1/me"`, `"/v1/me/player"`). The base URL therefore
@@ -46,5 +50,5 @@ pub trait SpotifyClient: Send + Sync {
         &self,
         path: &str,
         access_token: &str,
-    ) -> Result<serde_json::Value, SpotifyError>;
+    ) -> Result<Option<serde_json::Value>, SpotifyError>;
 }

@@ -92,7 +92,7 @@ impl SpotifyClient for ReqwestSpotifyClient {
         &self,
         path: &str,
         access_token: &str,
-    ) -> Result<serde_json::Value, SpotifyError> {
+    ) -> Result<Option<serde_json::Value>, SpotifyError> {
         let url = format!("{}{}", self.base_url, path);
         let response = self
             .client
@@ -105,9 +105,15 @@ impl SpotifyClient for ReqwestSpotifyClient {
         if !status.is_success() {
             return Err(SpotifyError::Status(status.as_u16()));
         }
+        // 204 No Content — Spotify's "nothing playing" signal for
+        // /me/player. Distinct from 200 with a JSON `null` body.
+        if status.as_u16() == 204 {
+            return Ok(None);
+        }
         response
             .json::<serde_json::Value>()
             .await
+            .map(Some)
             .map_err(|e| SpotifyError::Decode(e.to_string()))
     }
 }

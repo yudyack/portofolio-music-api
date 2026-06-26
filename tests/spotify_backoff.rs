@@ -76,7 +76,8 @@ async fn spotify_5xx_then_200_retries_and_succeeds() {
     )
     .await
     .expect("watchdog: get_json must not exceed 20 s")
-    .expect("get_json must succeed (503 → backoff → retry → 200)");
+    .expect("get_json must succeed (503 → backoff → retry → 200)")
+    .expect("/v1/me returns a body, not 204");
     let elapsed = started.elapsed();
 
     assert_eq!(
@@ -210,14 +211,16 @@ async fn spotify_5xx_retry_consumes_a_second_governor_token() {
     let r1 = tokio::time::timeout(Duration::from_secs(20), client.get_json("/v1/me", "tok"))
         .await
         .expect("call 1 watchdog")
-        .expect("call 1 must succeed (502 → backoff → retry → 200)");
+        .expect("call 1 must succeed (502 → backoff → retry → 200)")
+        .expect("body present");
     let t_after_call1 = t0.elapsed();
     assert_eq!(r1["id"], "call1");
 
     let r2 = tokio::time::timeout(Duration::from_secs(20), client.get_json("/v1/me", "tok"))
         .await
         .expect("call 2 watchdog")
-        .expect("call 2 must succeed");
+        .expect("call 2 must succeed")
+        .expect("body present");
     let t_after_call2 = t0.elapsed();
     assert_eq!(r2["id"], "call2");
 

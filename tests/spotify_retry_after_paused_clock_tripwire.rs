@@ -63,7 +63,8 @@ async fn spotify_retry_after_under_paused_clock_with_spec_literal_tolerance() {
     )
     .await
     .expect("watchdog: get_json must not exceed 20 s")
-    .expect("get_json must succeed (429 → Retry-After → retry → 200)");
+    .expect("get_json must succeed (429 → Retry-After → retry → 200)")
+    .expect("body present");
 
     let virtual_elapsed = virtual_started.elapsed();
     let real_elapsed = real_started.elapsed();

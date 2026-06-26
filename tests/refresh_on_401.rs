@@ -42,7 +42,11 @@ impl ScriptedSpotify {
 
 #[async_trait]
 impl SpotifyClient for ScriptedSpotify {
-    async fn get_json(&self, _path: &str, access_token: &str) -> Result<Value, SpotifyError> {
+    async fn get_json(
+        &self,
+        _path: &str,
+        access_token: &str,
+    ) -> Result<Option<Value>, SpotifyError> {
         self.seen_tokens.lock().unwrap().push(access_token.to_string());
         match self
             .script
@@ -51,7 +55,7 @@ impl SpotifyClient for ScriptedSpotify {
             .pop_front()
             .expect("ScriptedSpotify called more times than programmed")
         {
-            Ok(v) => Ok(v),
+            Ok(v) => Ok(Some(v)),
             Err(code) => Err(SpotifyError::Status(code)),
         }
     }
@@ -168,7 +172,7 @@ async fn on_401_refreshes_upserts_and_retries_once_succeeding() {
     let svc = service(repo.clone(), spotify.clone(), oauth.clone(), auth_state.clone());
 
     let v = svc.get("/v1/me/player").await.expect("must succeed after refresh+retry");
-    assert_eq!(v, json!({"playing": false}));
+    assert_eq!(v, Some(json!({"playing": false})));
 
     // Refresh ran exactly once with the OLD refresh token.
     assert_eq!(oauth.calls.load(Ordering::SeqCst), 1);
@@ -220,7 +224,7 @@ async fn success_without_401_does_not_refresh() {
     let svc = service(repo, spotify.clone(), oauth.clone(), auth_state);
 
     let v = svc.get("/v1/me").await.expect("must succeed on first try");
-    assert_eq!(v, json!({"ok": true}));
+    assert_eq!(v, Some(json!({"ok": true})));
     assert_eq!(oauth.calls.load(Ordering::SeqCst), 0, "no 401 → no refresh");
     assert_eq!(spotify.seen_tokens.lock().unwrap().len(), 1, "no retry");
 }
