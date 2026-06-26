@@ -9,6 +9,12 @@ pub const SPOTIFY_CLIENT_ID: &str = "SPOTIFY_CLIENT_ID";
 pub const SPOTIFY_CLIENT_SECRET: &str = "SPOTIFY_CLIENT_SECRET";
 pub const SPOTIFY_REDIRECT_URI: &str = "SPOTIFY_REDIRECT_URI";
 pub const DATABASE_URL: &str = "DATABASE_URL";
+/// Set to `1` (or any non-empty value) to make the service serve canned
+/// Spotify fixtures instead of calling the real Spotify API. Local-dev
+/// switch — skips OAuth, seeds a fake token, surfaces through /healthz
+/// `mock_mode:true` so the leptos frontend can render a "MOCK DATA"
+/// banner.
+pub const MOCK_DATA: &str = "MOCK_DATA";
 
 const DEFAULT_AUTH_BASIC_USERNAME: &str = "owner";
 
@@ -27,6 +33,8 @@ pub struct Config {
     pub spotify_client_secret: String,
     pub spotify_redirect_uri: String,
     pub database_url: String,
+    /// Serve canned Spotify fixtures instead of the real API. Off by default.
+    pub mock_data: bool,
 }
 
 /// Hand-rolled Debug that redacts secret fields. Pre-arms criterion 13:
@@ -43,6 +51,7 @@ impl std::fmt::Debug for Config {
             .field("spotify_client_secret", &"<redacted>")
             .field("spotify_redirect_uri", &self.spotify_redirect_uri)
             .field("database_url", &self.database_url)
+            .field("mock_data", &self.mock_data)
             .finish()
     }
 }
@@ -77,6 +86,9 @@ impl Config {
             spotify_client_secret: required(SPOTIFY_CLIENT_SECRET)?,
             spotify_redirect_uri: required(SPOTIFY_REDIRECT_URI)?,
             database_url: required(DATABASE_URL)?,
+            // Any non-empty value enables mock mode; "0"/"false" also count
+            // because the explicit user intent is "this var is set".
+            mock_data: get(MOCK_DATA).map(|v| !v.is_empty()).unwrap_or(false),
         })
     }
 }

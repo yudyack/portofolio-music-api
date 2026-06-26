@@ -50,6 +50,7 @@ async fn build(server: &MockServer) -> (AppState, Arc<dyn TokenRepository>) {
         spotify_client_secret: "secret".into(),
         spotify_redirect_uri: "http://127.0.0.1:8080/auth/spotify/callback".into(),
         database_url: "sqlite::memory:".into(),
+        mock_data: false,
     };
     let loose = Quota::with_period(Duration::from_millis(1))
         .unwrap()

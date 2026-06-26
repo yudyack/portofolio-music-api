@@ -1,0 +1,42 @@
+{
+  "total": 9,
+  "limit": 20,
+  "offset": 0,
+  "items": [
+    {
+      "name": "deep focus",
+      "owner": { "display_name": "Yudhya (mock)" },
+      "images": [{ "url": "https://i.scdn.co/image/mocked-cover-focus" }],
+      "tracks": { "total": 48 },
+      "external_urls": { "spotify": "https://open.spotify.com/playlist/mock_focus" }
+    },
+    {
+      "name": "sunday breakfast",
+      "owner": { "display_name": "Yudhya (mock)" },
+      "images": [{ "url": "https://i.scdn.co/image/mocked-cover-breakfast" }],
+      "tracks": { "total": 23 },
+      "external_urls": { "spotify": "https://open.spotify.com/playlist/mock_breakfast" }
+    },
+    {
+      "name": "late night drive",
+      "owner": { "display_name": "Yudhya (mock)" },
+      "images": [{ "url": "https://i.scdn.co/image/mocked-cover-drive" }],
+      "tracks": { "total": 31 },
+      "external_urls": { "spotify": "https://open.spotify.com/playlist/mock_drive" }
+    },
+    {
+      "name": "running cadence",
+      "owner": { "display_name": "Yudhya (mock)" },
+      "images": [{ "url": "https://i.scdn.co/image/mocked-cover-running" }],
+      "tracks": { "total": 56 },
+      "external_urls": { "spotify": "https://open.spotify.com/playlist/mock_running" }
+    },
+    {
+      "name": "rainy afternoon",
+      "owner": { "display_name": "Yudhya (mock)" },
+      "images": [{ "url": "https://i.scdn.co/image/mocked-cover-rain" }],
+      "tracks": { "total": 18 },
+      "external_urls": { "spotify": "https://open.spotify.com/playlist/mock_rain" }
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "is_playing": true,
+  "progress_ms": 84210,
+  "timestamp": 1761480000000,
+  "device": {
+    "id": "mock-device-id",
+    "name": "Yudhya's MacBook (mock)",
+    "type": "Computer",
+    "is_active": true,
+    "volume_percent": 72
+  },
+  "item": {
+    "id": "mock_track_id_001",
+    "name": "Midnight City",
+    "duration_ms": 240960,
+    "artists": [
+      { "id": "mock_artist_id_001", "name": "M83" }
+    ],
+    "album": {
+      "id": "mock_album_id_001",
+      "name": "Hurry Up, We're Dreaming",
+      "images": [
+        { "url": "https://i.scdn.co/image/mocked-cover-hurry-large", "height": 640, "width": 640 },
+        { "url": "https://i.scdn.co/image/mocked-cover-hurry-small", "height": 64, "width": 64 }
+      ]
+    }
+  },
+  "currently_playing_type": "track"
+}

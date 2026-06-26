@@ -1,0 +1,82 @@
+{
+  "items": [
+    {
+      "played_at": "2026-06-26T11:42:18Z",
+      "track": {
+        "id": "mock_recent_001",
+        "name": "Strobe",
+        "duration_ms": 631000,
+        "artists": [{ "name": "deadmau5" }],
+        "album": {
+          "name": "For Lack of a Better Name",
+          "images": [{ "url": "https://i.scdn.co/image/mocked-cover-strobe" }]
+        }
+      }
+    },
+    {
+      "played_at": "2026-06-26T11:35:02Z",
+      "track": {
+        "id": "mock_recent_002",
+        "name": "Avril 14th",
+        "duration_ms": 124000,
+        "artists": [{ "name": "Aphex Twin" }],
+        "album": {
+          "name": "Drukqs",
+          "images": [{ "url": "https://i.scdn.co/image/mocked-cover-drukqs" }]
+        }
+      }
+    },
+    {
+      "played_at": "2026-06-26T11:30:44Z",
+      "track": {
+        "id": "mock_recent_003",
+        "name": "Roads",
+        "duration_ms": 304000,
+        "artists": [{ "name": "Portishead" }],
+        "album": {
+          "name": "Dummy",
+          "images": [{ "url": "https://i.scdn.co/image/mocked-cover-dummy" }]
+        }
+      }
+    },
+    {
+      "played_at": "2026-06-26T11:25:12Z",
+      "track": {
+        "id": "mock_recent_004",
+        "name": "Teardrop",
+        "duration_ms": 330000,
+        "artists": [{ "name": "Massive Attack" }],
+        "album": {
+          "name": "Mezzanine",
+          "images": [{ "url": "https://i.scdn.co/image/mocked-cover-mezzanine" }]
+        }
+      }
+    },
+    {
+      "played_at": "2026-06-26T11:18:50Z",
+      "track": {
+        "id": "mock_recent_005",
+        "name": "Wait",
+        "duration_ms": 285000,
+        "artists": [{ "name": "M83" }, { "name": "Justin Meldal-Johnsen" }],
+        "album": {
+          "name": "Hurry Up, We're Dreaming",
+          "images": [{ "url": "https://i.scdn.co/image/mocked-cover-hurry-large" }]
+        }
+      }
+    },
+    {
+      "played_at": "2026-06-26T11:13:01Z",
+      "track": {
+        "id": "mock_recent_006",
+        "name": "Brian Eno",
+        "duration_ms": 196000,
+        "artists": [{ "name": "MGMT" }],
+        "album": {
+          "name": "Congratulations",
+          "images": [{ "url": "https://i.scdn.co/image/mocked-cover-congrats" }]
+        }
+      }
+    }
+  ]
+}

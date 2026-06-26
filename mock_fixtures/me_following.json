@@ -1,0 +1,9 @@
+{
+  "artists": {
+    "total": 17,
+    "items": [],
+    "limit": 1,
+    "next": null,
+    "cursors": { "after": null }
+  }
+}

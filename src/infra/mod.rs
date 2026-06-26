@@ -5,6 +5,7 @@
 //! tests/reqwest_isolation.rs). Domain and app-services depend only on
 //! the `TokenRepository` and `SpotifyClient` traits.
 
+pub mod mock_spotify_client;
 pub mod sqlite_token_repo;
 pub mod spotify_backoff;
 pub mod spotify_client;

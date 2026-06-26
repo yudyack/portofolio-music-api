@@ -24,6 +24,8 @@ use crate::domain::auth_state::AuthState;
 use crate::domain::oauth_client::TokenExchanger;
 use crate::domain::spotify::SpotifyClient;
 use crate::domain::tokens::TokenRepository;
+use crate::domain::tokens::TokenRecord;
+use crate::infra::mock_spotify_client::MockSpotifyClient;
 use crate::infra::run_migrations;
 use crate::infra::spotify_client::ReqwestSpotifyClient;
 use crate::infra::sqlite_token_repo::SqliteTokenRepository;
@@ -80,10 +82,24 @@ pub async fn init() -> Result<(AppState, String), InitError> {
         .map_err(|e| InitError::Migrate(format!("{e}")))?;
 
     let repo: Arc<dyn TokenRepository> = Arc::new(SqliteTokenRepository::new(pool));
-    // base_url excludes `/v1`; callers pass the full path (e.g. `/v1/me`).
-    let spotify: Arc<dyn SpotifyClient> =
-        Arc::new(ReqwestSpotifyClient::new("https://api.spotify.com".to_string())
-            .map_err(|e| InitError::SpotifyClient(format!("{e}")))?);
+
+    // Mock-mode short-circuit: skip the real Spotify + OAuth wiring, return
+    // canned fixtures via MockSpotifyClient, and seed a fake token row so
+    // the data plane works without going through the OAuth bootstrap. The
+    // real OAuth exchanger is still constructed (unused at runtime, but
+    // wiring stays uniform across modes).
+    if config.mock_data {
+        seed_mock_token(&repo, &config.owner_spotify_user_id).await?;
+    }
+    let spotify: Arc<dyn SpotifyClient> = if config.mock_data {
+        tracing::warn!("MOCK_DATA=1 — serving canned fixtures, NOT real Spotify");
+        Arc::new(MockSpotifyClient::new())
+    } else {
+        Arc::new(
+            ReqwestSpotifyClient::new("https://api.spotify.com".to_string())
+                .map_err(|e| InitError::SpotifyClient(format!("{e}")))?,
+        )
+    };
     let oauth: Arc<dyn TokenExchanger> = Arc::new(
         ReqwestTokenExchanger::new(
             "https://accounts.spotify.com/api/token".to_string(),
@@ -94,6 +110,10 @@ pub async fn init() -> Result<(AppState, String), InitError> {
     );
     let auth_state = Arc::new(AuthState::new());
     let state_store = Arc::new(StateStore::new());
+
+    // (helper below — declared after init for ergonomics; mock-token seeding
+    // upserts a long-lived fake so `tokens.get()` returns Some(_) and the
+    // /v1/* handlers don't trip the `NeedsReauth` branch in MockSpotifyClient.)
     let bind_addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
     Ok((
         AppState::new(
@@ -122,6 +142,10 @@ struct Health {
     version: &'static str,
     token_state: &'static str,
     last_fetch_ts: Option<String>,
+    /// True iff `MOCK_DATA=1` is set at startup — the leptos frontend reads
+    /// this and renders a "MOCK DATA" banner. Always serialised so the
+    /// absence is unambiguously "real Spotify data, not just absent flag".
+    mock_mode: bool,
 }
 
 async fn healthz(State(state): State<AppState>) -> Json<Health> {
@@ -143,7 +167,33 @@ async fn healthz(State(state): State<AppState>) -> Json<Health> {
         version: VERSION,
         token_state,
         last_fetch_ts: None,
+        mock_mode: state.config.mock_data,
     })
+}
+
+/// Upsert a deterministic fake token so mock-mode `/v1/*` handlers see a
+/// `Some(TokenRecord)` from the repo and don't hit `NeedsReauth`. The
+/// access token here is never sent anywhere — MockSpotifyClient ignores
+/// it. Expiry is far in the future so the refresher (when it lands) won't
+/// trigger.
+async fn seed_mock_token(
+    repo: &Arc<dyn TokenRepository>,
+    owner_id: &str,
+) -> Result<(), InitError> {
+    let record = TokenRecord {
+        access_token: "MOCK_ACCESS_NEVER_SENT".to_string(),
+        refresh_token: "MOCK_REFRESH_NEVER_SENT".to_string(),
+        // Year-2099 — well past any realistic refresh window.
+        expires_at: chrono::DateTime::<chrono::Utc>::from_timestamp(4102444800, 0)
+            .unwrap_or_else(chrono::Utc::now),
+        scope: "user-read-private user-read-playback-state user-read-recently-played \
+                user-top-read playlist-read-private user-follow-read"
+            .to_string(),
+        owner_id: owner_id.to_string(),
+    };
+    repo.upsert(record)
+        .await
+        .map_err(|e| InitError::Migrate(format!("seed mock token: {e}")))
 }
 
 pub fn app(state: AppState) -> Router {

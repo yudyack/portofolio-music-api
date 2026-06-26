@@ -67,8 +67,7 @@ pub async fn profile(State(state): State<AppState>) -> Response {
     };
 
     let payload = map_profile(&me, following, playlists_count);
-    state.cache.put(PROFILE_CACHE_KEY.to_string(), payload.clone(), PROFILE_TTL);
-    (StatusCode::OK, Json(payload)).into_response()
+    cache_and_respond(&state, PROFILE_CACHE_KEY, PROFILE_TTL, payload)
 }
 
 fn map_profile(me: &Value, following: u64, playlists_count: u64) -> Value {
@@ -121,8 +120,7 @@ pub async fn now(State(state): State<AppState>) -> Response {
         Ok(None) => json!({"playing": false}),
         Err(e) => return service_error_to_response(e),
     };
-    state.cache.put(NOW_CACHE_KEY.to_string(), payload.clone(), NOW_TTL);
-    (StatusCode::OK, Json(payload)).into_response()
+    cache_and_respond(&state, NOW_CACHE_KEY, NOW_TTL, payload)
 }
 
 fn map_now(p: &Value) -> Value {
@@ -197,8 +195,7 @@ pub async fn recent(State(state): State<AppState>) -> Response {
         .map(|arr| arr.iter().map(map_recent_item).collect())
         .unwrap_or_default();
     let payload = json!({"items": items});
-    state.cache.put(RECENT_CACHE_KEY.to_string(), payload.clone(), RECENT_TTL);
-    (StatusCode::OK, Json(payload)).into_response()
+    cache_and_respond(&state, RECENT_CACHE_KEY, RECENT_TTL, payload)
 }
 
 fn map_recent_item(entry: &Value) -> Value {
@@ -254,8 +251,7 @@ pub async fn top_tracks(State(state): State<AppState>) -> Response {
         })
         .unwrap_or_default();
     let payload = json!({"range": "short_term", "items": items});
-    state.cache.put(TOP_CACHE_KEY.to_string(), payload.clone(), TOP_TTL);
-    (StatusCode::OK, Json(payload)).into_response()
+    cache_and_respond(&state, TOP_CACHE_KEY, TOP_TTL, payload)
 }
 
 fn map_top_track(rank: u64, t: &Value) -> Value {
@@ -294,10 +290,7 @@ pub async fn playlists(State(state): State<AppState>) -> Response {
         .map(|arr| arr.iter().map(map_playlist_item).collect())
         .unwrap_or_default();
     let payload = json!({"items": items, "total": total});
-    state
-        .cache
-        .put(PLAYLISTS_CACHE_KEY.to_string(), payload.clone(), PLAYLISTS_TTL);
-    (StatusCode::OK, Json(payload)).into_response()
+    cache_and_respond(&state, PLAYLISTS_CACHE_KEY, PLAYLISTS_TTL, payload)
 }
 
 fn map_playlist_item(p: &Value) -> Value {
@@ -353,6 +346,19 @@ fn first_image_url(container: &Value) -> String {
 
 async fn svc_get(state: &AppState, path: &str) -> Result<Option<Value>, ServiceError> {
     state.spotify_service.get(path).await
+}
+
+/// Cache the payload, tag it with `_mock:true` if mock mode is on, return
+/// it as 200 JSON. The mock tag goes onto BOTH the cached value and the
+/// wire value, so subsequent cache hits stay marked.
+fn cache_and_respond(state: &AppState, key: &str, ttl: Duration, mut payload: Value) -> Response {
+    if state.config.mock_data {
+        if let Some(obj) = payload.as_object_mut() {
+            obj.insert("_mock".to_string(), Value::Bool(true));
+        }
+    }
+    state.cache.put(key.to_string(), payload.clone(), ttl);
+    (StatusCode::OK, Json(payload)).into_response()
 }
 
 fn needs_reauth() -> Response {

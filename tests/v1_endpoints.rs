@@ -88,6 +88,7 @@ fn cfg() -> Config {
         auth_basic_username: "owner".into(),
         auth_basic_password: "pw".into(),
         database_url: "sqlite::memory:".into(),
+        mock_data: false,
     }
 }
 

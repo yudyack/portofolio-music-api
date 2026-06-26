@@ -1,0 +1,20 @@
+{
+  "id": "yudyack_dev",
+  "display_name": "Yudhya (mock)",
+  "followers": { "total": 64 },
+  "images": [
+    {
+      "url": "https://i.scdn.co/image/ab6775700000ee85aaaaaaaaaaaaaaaaaaaaaaaa",
+      "height": 640,
+      "width": 640
+    },
+    {
+      "url": "https://i.scdn.co/image/ab67757000000020aaaaaaaaaaaaaaaaaaaaaaaa",
+      "height": 64,
+      "width": 64
+    }
+  ],
+  "external_urls": {
+    "spotify": "https://open.spotify.com/user/yudyack_dev"
+  }
+}

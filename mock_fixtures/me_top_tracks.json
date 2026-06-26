@@ -1,0 +1,104 @@
+{
+  "items": [
+    {
+      "id": "mock_top_001",
+      "name": "Midnight City",
+      "duration_ms": 240960,
+      "artists": [{ "name": "M83" }],
+      "album": {
+        "name": "Hurry Up, We're Dreaming",
+        "images": [{ "url": "https://i.scdn.co/image/mocked-cover-hurry-large" }]
+      }
+    },
+    {
+      "id": "mock_top_002",
+      "name": "Heads Will Roll",
+      "duration_ms": 222000,
+      "artists": [{ "name": "Yeah Yeah Yeahs" }],
+      "album": {
+        "name": "It's Blitz!",
+        "images": [{ "url": "https://i.scdn.co/image/mocked-cover-blitz" }]
+      }
+    },
+    {
+      "id": "mock_top_003",
+      "name": "Strobe",
+      "duration_ms": 631000,
+      "artists": [{ "name": "deadmau5" }],
+      "album": {
+        "name": "For Lack of a Better Name",
+        "images": [{ "url": "https://i.scdn.co/image/mocked-cover-strobe" }]
+      }
+    },
+    {
+      "id": "mock_top_004",
+      "name": "Teardrop",
+      "duration_ms": 330000,
+      "artists": [{ "name": "Massive Attack" }],
+      "album": {
+        "name": "Mezzanine",
+        "images": [{ "url": "https://i.scdn.co/image/mocked-cover-mezzanine" }]
+      }
+    },
+    {
+      "id": "mock_top_005",
+      "name": "Time",
+      "duration_ms": 275000,
+      "artists": [{ "name": "Hans Zimmer" }],
+      "album": {
+        "name": "Inception (Original Motion Picture Soundtrack)",
+        "images": [{ "url": "https://i.scdn.co/image/mocked-cover-inception" }]
+      }
+    },
+    {
+      "id": "mock_top_006",
+      "name": "Resonance",
+      "duration_ms": 211000,
+      "artists": [{ "name": "Home" }],
+      "album": {
+        "name": "Odyssey",
+        "images": [{ "url": "https://i.scdn.co/image/mocked-cover-odyssey" }]
+      }
+    },
+    {
+      "id": "mock_top_007",
+      "name": "An Ending (Ascent)",
+      "duration_ms": 269000,
+      "artists": [{ "name": "Brian Eno" }],
+      "album": {
+        "name": "Apollo: Atmospheres and Soundtracks",
+        "images": [{ "url": "https://i.scdn.co/image/mocked-cover-apollo" }]
+      }
+    },
+    {
+      "id": "mock_top_008",
+      "name": "Spectre",
+      "duration_ms": 269000,
+      "artists": [{ "name": "Alan Walker" }],
+      "album": {
+        "name": "Spectre",
+        "images": [{ "url": "https://i.scdn.co/image/mocked-cover-spectre" }]
+      }
+    },
+    {
+      "id": "mock_top_009",
+      "name": "Faded",
+      "duration_ms": 212000,
+      "artists": [{ "name": "Alan Walker" }],
+      "album": {
+        "name": "Different World",
+        "images": [{ "url": "https://i.scdn.co/image/mocked-cover-different" }]
+      }
+    },
+    {
+      "id": "mock_top_010",
+      "name": "Avril 14th",
+      "duration_ms": 124000,
+      "artists": [{ "name": "Aphex Twin" }],
+      "album": {
+        "name": "Drukqs",
+        "images": [{ "url": "https://i.scdn.co/image/mocked-cover-drukqs" }]
+      }
+    }
+  ]
+}
