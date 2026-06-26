@@ -110,10 +110,10 @@ pub async fn init() -> Result<(AppState, String), InitError> {
 /// Cloudflare tunnel doesn't flap when the upstream link is unhealthy —
 /// the body carries the state instead.
 ///
-/// Cycle 7 derives `token_state` from the repository; `status` stays
-/// hardcoded `"ok"` until cycle 10's refresher introduces real degradation
-/// signals. The `status`/`token_state` fields are `&'static str` because
-/// every value they take today is a literal — cycle 10+ widens to enums.
+/// `status` is derived from `AuthState` (criterion 6 read-side): a flipped
+/// `NeedsReauth` flag surfaces as `status:"needs_reauth"` for the frontend
+/// to render a banner. `token_state` reports raw repo presence;
+/// `last_fetch_ts` is still TODO (needs a refresher signal).
 #[derive(Serialize)]
 struct Health {
     status: &'static str,
@@ -127,13 +127,17 @@ async fn healthz(State(state): State<AppState>) -> Json<Health> {
         Ok(Some(_)) => "authorized",
         Ok(None) => "uninitialized",
         Err(e) => {
-            // Log the chain, do not leak it to the wire (criterion 13).
             tracing::warn!(error = %e, "healthz repo lookup failed");
             "unknown"
         }
     };
+    let status: &'static str = if state.auth_state.needs_reauth() {
+        "needs_reauth"
+    } else {
+        "ok"
+    };
     Json(Health {
-        status: "ok",
+        status,
         version: VERSION,
         token_state,
         last_fetch_ts: None,
@@ -145,5 +149,6 @@ pub fn app(state: AppState) -> Router {
         .route("/healthz", get(healthz))
         .route("/auth/spotify/login", get(routes::auth::login))
         .route("/auth/spotify/callback", get(routes::auth::callback))
+        .route("/v1/profile", get(routes::v1::profile))
         .with_state(state)
 }
