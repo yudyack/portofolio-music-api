@@ -50,8 +50,16 @@ pub enum TokenExchangeError {
 
 #[async_trait]
 pub trait TokenExchanger: Send + Sync {
-    /// Exchange a `refresh_token` for a fresh access token
-    /// (`grant_type=refresh_token`). The implementor supplies the app's
-    /// client credentials; callers pass only the refresh token.
+    /// `grant_type=refresh_token` — exchange a refresh token for a fresh
+    /// access token. The implementor supplies the client credentials.
     async fn refresh(&self, refresh_token: &str) -> Result<RefreshedTokens, TokenExchangeError>;
+
+    /// `grant_type=authorization_code` — exchange the callback `code` for
+    /// the initial token-set. `redirect_uri` must match the one used at
+    /// `/login` (Spotify validates it).
+    async fn exchange_code(
+        &self,
+        code: &str,
+        redirect_uri: &str,
+    ) -> Result<RefreshedTokens, TokenExchangeError>;
 }

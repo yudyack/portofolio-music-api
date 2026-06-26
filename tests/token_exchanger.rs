@@ -135,6 +135,57 @@ async fn refresh_without_rotated_refresh_token_yields_none() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn exchange_code_posts_authorization_code_grant_and_parses_tokens() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "access_token": "ACCESS_1",
+            "token_type": "Bearer",
+            "expires_in": 3600,
+            "refresh_token": "REFRESH_1",
+            "scope": "user-read-private"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let ex = exchanger(&server);
+    let tokens = ex
+        .exchange_code("AUTH_CODE", "http://127.0.0.1:8080/auth/spotify/callback")
+        .await
+        .expect("exchange must succeed");
+    assert_eq!(tokens.access_token, "ACCESS_1");
+    assert_eq!(tokens.refresh_token.as_deref(), Some("REFRESH_1"));
+
+    let body = String::from_utf8(server.received_requests().await.unwrap()[0].body.clone()).unwrap();
+    assert!(body.contains("grant_type=authorization_code"), "body: {body}");
+    assert!(body.contains("code=AUTH_CODE"), "body: {body}");
+    assert!(
+        body.contains("redirect_uri=http%3A%2F%2F127.0.0.1%3A8080%2Fauth%2Fspotify%2Fcallback"),
+        "body must carry the redirect_uri: {body}",
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn exchange_code_maps_invalid_grant() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/token"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({"error": "invalid_grant"})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let ex = exchanger(&server);
+    let err = ex
+        .exchange_code("BAD", "http://127.0.0.1:8080/auth/spotify/callback")
+        .await
+        .expect_err("400 invalid_grant must surface");
+    assert!(matches!(err, TokenExchangeError::InvalidGrant), "got {err:?}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn refresh_maps_non_400_failure_to_status() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

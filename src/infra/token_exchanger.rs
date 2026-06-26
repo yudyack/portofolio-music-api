@@ -52,25 +52,25 @@ struct TokenResponseDto {
     scope: Option<String>,
 }
 
-#[async_trait]
-impl TokenExchanger for ReqwestTokenExchanger {
-    async fn refresh(&self, refresh_token: &str) -> Result<RefreshedTokens, TokenExchangeError> {
+impl ReqwestTokenExchanger {
+    /// POST the form to the token endpoint and map the response. Shared by
+    /// both grants — only the form fields differ.
+    async fn post_token(
+        &self,
+        form: &[(&str, &str)],
+    ) -> Result<RefreshedTokens, TokenExchangeError> {
         let resp = self
             .client
             .post(&self.token_url)
             .basic_auth(&self.client_id, Some(&self.client_secret))
-            .form(&[
-                ("grant_type", "refresh_token"),
-                ("refresh_token", refresh_token),
-            ])
+            .form(form)
             .send()
             .await
             .map_err(|e| TokenExchangeError::Transport(e.to_string()))?;
 
         let status = resp.status();
-
-        // A 400 may be `invalid_grant` (revoked refresh token) — the one
-        // failure the caller must distinguish to flip NeedsReauth.
+        // A 400 may be `invalid_grant` (dead refresh / bad code) — the
+        // caller must distinguish it.
         if status == StatusCode::BAD_REQUEST {
             let body: serde_json::Value = resp
                 .json()
@@ -81,7 +81,6 @@ impl TokenExchanger for ReqwestTokenExchanger {
             }
             return Err(TokenExchangeError::Status(400));
         }
-
         if !status.is_success() {
             return Err(TokenExchangeError::Status(status.as_u16()));
         }
@@ -90,12 +89,35 @@ impl TokenExchanger for ReqwestTokenExchanger {
             .json()
             .await
             .map_err(|e| TokenExchangeError::Decode(e.to_string()))?;
-
         Ok(RefreshedTokens {
             access_token: dto.access_token,
             refresh_token: dto.refresh_token,
             expires_in: dto.expires_in,
             scope: dto.scope,
         })
+    }
+}
+
+#[async_trait]
+impl TokenExchanger for ReqwestTokenExchanger {
+    async fn refresh(&self, refresh_token: &str) -> Result<RefreshedTokens, TokenExchangeError> {
+        self.post_token(&[
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh_token),
+        ])
+        .await
+    }
+
+    async fn exchange_code(
+        &self,
+        code: &str,
+        redirect_uri: &str,
+    ) -> Result<RefreshedTokens, TokenExchangeError> {
+        self.post_token(&[
+            ("grant_type", "authorization_code"),
+            ("code", code),
+            ("redirect_uri", redirect_uri),
+        ])
+        .await
     }
 }

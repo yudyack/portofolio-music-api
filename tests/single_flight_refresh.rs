@@ -80,6 +80,9 @@ impl TokenExchanger for CountingExchanger {
             Outcome::InvalidGrant => Err(TokenExchangeError::InvalidGrant),
         }
     }
+    async fn exchange_code(&self, _: &str, _: &str) -> Result<RefreshedTokens, TokenExchangeError> {
+        unimplemented!("stub: exchange_code not exercised by these tests")
+    }
 }
 
 /// Concurrency-safe in-memory single-row repository.

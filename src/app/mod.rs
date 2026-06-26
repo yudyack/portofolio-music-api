@@ -5,3 +5,4 @@
 //! isolation), so a storage or HTTP-client swap never reaches this layer.
 
 pub mod spotify_service;
+pub mod state_store;

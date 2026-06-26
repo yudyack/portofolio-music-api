@@ -94,6 +94,9 @@ impl TokenExchanger for StubExchanger {
             Err(e) => Err(e),
         }
     }
+    async fn exchange_code(&self, _: &str, _: &str) -> Result<RefreshedTokens, TokenExchangeError> {
+        unimplemented!("stub: exchange_code not exercised by these tests")
+    }
 }
 
 /// In-memory single-row TokenRepository.
