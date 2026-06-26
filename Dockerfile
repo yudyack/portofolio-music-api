@@ -12,7 +12,7 @@ RUN cargo build --release --locked
 FROM debian:bookworm-slim AS runner
 WORKDIR /app
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates \
+ && apt-get install -y --no-install-recommends ca-certificates curl \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --system --gid 1001 app \
  && useradd --system --uid 1001 --gid app app \
@@ -24,4 +24,8 @@ COPY --from=builder --chown=app:app /app/target/release/music-api ./music-api
 USER app
 EXPOSE 8080
 ENV BIND_ADDR=0.0.0.0:8080
+# /healthz always returns 200 (it carries degradation in the body), so it's a
+# clean liveness signal.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:8080/healthz || exit 1
 CMD ["./music-api"]
