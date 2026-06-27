@@ -44,6 +44,7 @@ fn test_config() -> Config {
         spotify_redirect_uri: "http://127.0.0.1:8080/auth/spotify/callback".into(),
         database_url: "sqlite::memory:".into(),
         mock_data: false,
+        scheduler: Default::default(),
     }
 }
 
@@ -119,7 +120,11 @@ async fn drive(repo: Arc<dyn TokenRepository>) -> serde_json::Value {
         )
         .await
         .unwrap();
-    assert_eq!(response.status(), StatusCode::OK, "criterion 15: 200 always");
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "criterion 15: 200 always"
+    );
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     serde_json::from_slice(&body).unwrap()
 }
@@ -131,7 +136,10 @@ fn assert_shared_shape(json: &serde_json::Value) {
         "status must be one of ok|degraded|needs_reauth, got {status:?}",
     );
     assert!(json["version"].is_string(), "version must be a string");
-    assert!(json["token_state"].is_string(), "token_state must be a string");
+    assert!(
+        json["token_state"].is_string(),
+        "token_state must be a string"
+    );
     assert!(
         json["last_fetch_ts"].is_null() || json["last_fetch_ts"].is_string(),
         "last_fetch_ts must be null or ISO8601 string",

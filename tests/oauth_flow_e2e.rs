@@ -51,6 +51,7 @@ async fn build(server: &MockServer) -> (AppState, Arc<dyn TokenRepository>) {
         spotify_redirect_uri: "http://127.0.0.1:8080/auth/spotify/callback".into(),
         database_url: "sqlite::memory:".into(),
         mock_data: false,
+        scheduler: Default::default(),
     };
     let loose = Quota::with_period(Duration::from_millis(1))
         .unwrap()
@@ -118,7 +119,9 @@ async fn login_then_callback_round_trip_links_the_account() {
     let cb = music_api::app(state)
         .oneshot(
             Request::builder()
-                .uri(format!("/auth/spotify/callback?code=AUTH&state={issued_state}"))
+                .uri(format!(
+                    "/auth/spotify/callback?code=AUTH&state={issued_state}"
+                ))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -145,7 +148,7 @@ async fn callback_token_endpoint_failure_maps_to_502() {
     let (state, repo) = build(&server).await;
     let s = state.clone(); // keep a handle to issue a state via the shared store
                            // (issue through a login would also work)
-    // Issue a valid state by driving a login first.
+                           // Issue a valid state by driving a login first.
     let login = music_api::app(s)
         .oneshot(
             Request::builder()
@@ -172,5 +175,8 @@ async fn callback_token_endpoint_failure_maps_to_502() {
         .await
         .unwrap();
     assert_eq!(cb.status(), StatusCode::BAD_GATEWAY);
-    assert!(repo.get().await.unwrap().is_none(), "failed exchange writes nothing");
+    assert!(
+        repo.get().await.unwrap().is_none(),
+        "failed exchange writes nothing"
+    );
 }

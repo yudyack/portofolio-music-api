@@ -47,8 +47,12 @@ impl TokenRepository for MemRepo {
             owner_id: "yudhyapw".into(),
         }))
     }
-    async fn upsert(&self, _: TokenRecord) -> Result<(), RepoError> { Ok(()) }
-    async fn delete(&self) -> Result<(), RepoError> { Ok(()) }
+    async fn upsert(&self, _: TokenRecord) -> Result<(), RepoError> {
+        Ok(())
+    }
+    async fn delete(&self) -> Result<(), RepoError> {
+        Ok(())
+    }
 }
 
 struct UnusedExchanger;
@@ -72,6 +76,7 @@ fn cfg() -> Config {
         auth_basic_password: "pw".into(),
         database_url: "sqlite::memory:".into(),
         mock_data: false,
+        scheduler: Default::default(),
     }
 }
 
@@ -131,7 +136,11 @@ async fn v1_endpoint_allows_yudhyapw_origin() {
 #[tokio::test]
 async fn v1_endpoint_allows_www_yudhyapw_origin() {
     let app = build_app();
-    let resp = send(&app, get_with_origin("/v1/profile", "https://www.yudhyapw.com")).await;
+    let resp = send(
+        &app,
+        get_with_origin("/v1/profile", "https://www.yudhyapw.com"),
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(
         resp.headers()
@@ -156,7 +165,11 @@ async fn v1_endpoint_blocks_evil_origin() {
 #[tokio::test]
 async fn v1_endpoint_handles_preflight_options() {
     let app = build_app();
-    let resp = send(&app, options_preflight("/v1/profile", "https://yudhyapw.com")).await;
+    let resp = send(
+        &app,
+        options_preflight("/v1/profile", "https://yudhyapw.com"),
+    )
+    .await;
     // Preflight returns 200/204 with ACAO header.
     assert!(resp.status().is_success() || resp.status() == StatusCode::NO_CONTENT);
     assert_eq!(

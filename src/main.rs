@@ -35,6 +35,13 @@ async fn main() {
 
     tracing::info!(%bind_addr, "music-api listening");
 
+    // Spawn the per-endpoint scheduler-push tasks. They park on the
+    // activity gate until the first /v1/* visitor lands, then tick on the
+    // intervals in `config.scheduler.intervals`. Live for the process
+    // lifetime — no JoinHandle is kept because the runtime tears them
+    // down at shutdown.
+    music_api::app::scheduler::spawn_schedulers(state.clone());
+
     if let Err(e) = axum::serve(listener, music_api::app(state)).await {
         tracing::error!(error = %e, "serve loop crashed");
         eprintln!("music-api: serve loop crashed: {e}");

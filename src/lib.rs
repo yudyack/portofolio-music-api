@@ -10,8 +10,10 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::extract::State;
+use axum::extract::{Request, State};
 use axum::http::{HeaderValue, Method};
+use axum::middleware::{from_fn_with_state, Next};
+use axum::response::Response;
 use axum::{routing::get, Json, Router};
 use serde::Serialize;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
@@ -23,8 +25,8 @@ use crate::config::{Config, ConfigError};
 use crate::domain::auth_state::AuthState;
 use crate::domain::oauth_client::TokenExchanger;
 use crate::domain::spotify::SpotifyClient;
-use crate::domain::tokens::TokenRepository;
 use crate::domain::tokens::TokenRecord;
+use crate::domain::tokens::TokenRepository;
 use crate::infra::mock_spotify_client::MockSpotifyClient;
 use crate::infra::run_migrations;
 use crate::infra::spotify_client::ReqwestSpotifyClient;
@@ -176,10 +178,7 @@ async fn healthz(State(state): State<AppState>) -> Json<Health> {
 /// access token here is never sent anywhere — MockSpotifyClient ignores
 /// it. Expiry is far in the future so the refresher (when it lands) won't
 /// trigger.
-async fn seed_mock_token(
-    repo: &Arc<dyn TokenRepository>,
-    owner_id: &str,
-) -> Result<(), InitError> {
+async fn seed_mock_token(repo: &Arc<dyn TokenRepository>, owner_id: &str) -> Result<(), InitError> {
     let record = TokenRecord {
         access_token: "MOCK_ACCESS_NEVER_SENT".to_string(),
         refresh_token: "MOCK_REFRESH_NEVER_SENT".to_string(),
@@ -206,6 +205,11 @@ pub fn app(state: AppState) -> Router {
         .route("/v1/recent", get(routes::v1::recent))
         .route("/v1/top/tracks", get(routes::v1::top_tracks))
         .route("/v1/playlists", get(routes::v1::playlists))
+        // Activity gate sits INSIDE the CORS layer (so preflights are not
+        // counted as user activity) — `from_fn_with_state` runs before the
+        // handler resolves; every successful or failed /v1/* hit touches
+        // the tracker.
+        .layer(from_fn_with_state(state.clone(), v1_activity_layer))
         .layer(cors_layer());
 
     Router::new()
@@ -214,6 +218,19 @@ pub fn app(state: AppState) -> Router {
         .route("/auth/spotify/callback", get(routes::auth::callback))
         .merge(v1)
         .with_state(state)
+}
+
+/// Middleware on `/v1/*` that records visitor activity for the scheduler
+/// gate (`app::activity::ActivityTracker`). Runs on every request,
+/// regardless of handler outcome — even a 503 `needs_reauth` counts as a
+/// visitor for the purpose of waking the parked schedulers.
+async fn v1_activity_layer(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    state.activity.touch();
+    next.run(request).await
 }
 
 fn cors_layer() -> CorsLayer {

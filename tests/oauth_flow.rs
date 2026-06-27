@@ -43,6 +43,7 @@ fn cfg() -> Config {
         spotify_redirect_uri: "http://127.0.0.1:8080/auth/spotify/callback".into(),
         database_url: "sqlite::memory:".into(),
         mock_data: false,
+        scheduler: Default::default(),
     }
 }
 
@@ -130,8 +131,11 @@ async fn login_without_basic_auth_is_401_with_challenge() {
 async fn login_with_wrong_password_is_401() {
     let server = MockServer::start().await;
     let (state, _, _) = build(&server).await;
-    let (status, _, _) =
-        send(state, get_auth("/auth/spotify/login", &basic(USER, "wrong"))).await;
+    let (status, _, _) = send(
+        state,
+        get_auth("/auth/spotify/login", &basic(USER, "wrong")),
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
@@ -163,8 +167,11 @@ async fn login_with_correct_creds_redirects_to_spotify() {
 async fn callback_with_unknown_state_is_400_state_mismatch() {
     let server = MockServer::start().await;
     let (state, repo, _) = build(&server).await;
-    let (status, _, body) =
-        send(state, get("/auth/spotify/callback?code=abc&state=never-issued")).await;
+    let (status, _, body) = send(
+        state,
+        get("/auth/spotify/callback?code=abc&state=never-issued"),
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body, "state mismatch");
     assert!(repo.get().await.unwrap().is_none(), "no token written");
@@ -205,11 +212,17 @@ async fn callback_with_wrong_owner_is_403_and_writes_nothing() {
 
     let (state, repo, store) = build(&server).await;
     let s = store.issue();
-    let (status, _, body) =
-        send(state, get(&format!("/auth/spotify/callback?code=abc&state={s}"))).await;
+    let (status, _, body) = send(
+        state,
+        get(&format!("/auth/spotify/callback?code=abc&state={s}")),
+    )
+    .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(body, "not the owner");
-    assert!(repo.get().await.unwrap().is_none(), "wrong owner writes no token");
+    assert!(
+        repo.get().await.unwrap().is_none(),
+        "wrong owner writes no token"
+    );
 }
 
 #[tokio::test]
@@ -233,8 +246,11 @@ async fn callback_valid_owner_upserts_tokens_and_returns_200() {
 
     let (state, repo, store) = build(&server).await;
     let s = store.issue();
-    let (status, _, body) =
-        send(state, get(&format!("/auth/spotify/callback?code=abc&state={s}"))).await;
+    let (status, _, body) = send(
+        state,
+        get(&format!("/auth/spotify/callback?code=abc&state={s}")),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, "Spotify linked. You can close this tab.");
