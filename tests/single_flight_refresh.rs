@@ -130,9 +130,7 @@ fn seed() -> TokenRecord {
     }
 }
 
-async fn drive_five(
-    svc: Arc<SpotifyService>,
-) -> Vec<Result<Option<Value>, ServiceError>> {
+async fn drive_five(svc: Arc<SpotifyService>) -> Vec<Result<Option<Value>, ServiceError>> {
     let mut handles = Vec::new();
     for _ in 0..5 {
         let s = svc.clone();

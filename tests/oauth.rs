@@ -84,7 +84,10 @@ fn contains_all_six_required_scopes_and_no_extras() {
         "criterion 1: exactly the 6 spec scopes (no extras). got: {actual:?}"
     );
     for s in &expected {
-        assert!(actual.contains(s), "missing required scope {s}; got {actual:?}");
+        assert!(
+            actual.contains(s),
+            "missing required scope {s}; got {actual:?}"
+        );
     }
     // SCOPES constant agreement
     assert_eq!(SCOPES.len(), expected.len());

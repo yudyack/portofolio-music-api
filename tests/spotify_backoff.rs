@@ -134,7 +134,9 @@ async fn spotify_persistent_5xx_exhausts_three_retries_then_surfaces_status() {
             code, 500,
             "exhausted 5xx backoff must surface the last upstream status",
         ),
-        other => panic!("expected Err(SpotifyError::Status(500)) after exhausting retries, got {other:?}"),
+        other => panic!(
+            "expected Err(SpotifyError::Status(500)) after exhausting retries, got {other:?}"
+        ),
     }
 
     // Deterministic exponential schedule (jitter disabled): 100 + 200 + 400

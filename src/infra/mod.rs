@@ -6,11 +6,11 @@
 //! the `TokenRepository` and `SpotifyClient` traits.
 
 pub mod mock_spotify_client;
-pub mod sqlite_token_repo;
 pub mod spotify_backoff;
 pub mod spotify_client;
 pub(crate) mod spotify_governor;
 pub(crate) mod spotify_retry;
+pub mod sqlite_token_repo;
 pub mod token_exchanger;
 
 use crate::domain::tokens::RepoError;

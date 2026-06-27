@@ -121,14 +121,20 @@ async fn end_to_end_401_refreshes_persists_rotated_set_and_retries() {
     let auth_state = Arc::new(AuthState::new());
     let svc = build_service(&server, repo.clone(), auth_state.clone());
 
-    let v = svc.get("/v1/me").await.expect("must succeed after refresh+retry");
+    let v = svc
+        .get("/v1/me")
+        .await
+        .expect("must succeed after refresh+retry");
     assert_eq!(v, Some(json!({"playing": false})));
 
     // Rotated token-set persisted to SQLite.
     let stored = repo.get().await.unwrap().expect("token row present");
     assert_eq!(stored.access_token, "NEW_ACCESS");
     assert_eq!(stored.refresh_token, "NEW_REFRESH");
-    assert!(stored.expires_at > Utc::now(), "expires_at moved into the future");
+    assert!(
+        stored.expires_at > Utc::now(),
+        "expires_at moved into the future"
+    );
     assert!(!auth_state.needs_reauth());
 
     // Exactly: GET 401, POST refresh, GET 200.
@@ -138,9 +144,14 @@ async fn end_to_end_401_refreshes_persists_rotated_set_and_retries() {
     // The Client Secret must NEVER reach the data-plane (/v1/me): those
     // requests carry Bearer, not client credentials.
     for r in reqs.iter().filter(|r| r.url.path() == "/v1/me") {
-        let auth = r.headers.get("authorization").map(|v| v.to_str().unwrap().to_string());
+        let auth = r
+            .headers
+            .get("authorization")
+            .map(|v| v.to_str().unwrap().to_string());
         assert!(
-            auth.as_deref().map(|a| a.starts_with("Bearer ")).unwrap_or(false),
+            auth.as_deref()
+                .map(|a| a.starts_with("Bearer "))
+                .unwrap_or(false),
             "data-plane request must use Bearer; got {auth:?}",
         );
         let body = String::from_utf8_lossy(&r.body);
@@ -153,7 +164,14 @@ async fn end_to_end_401_refreshes_persists_rotated_set_and_retries() {
     let bearers: Vec<String> = reqs
         .iter()
         .filter(|r| r.url.path() == "/v1/me")
-        .map(|r| r.headers.get("authorization").unwrap().to_str().unwrap().to_string())
+        .map(|r| {
+            r.headers
+                .get("authorization")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string()
+        })
         .collect();
     assert_eq!(bearers, vec!["Bearer OLD_ACCESS", "Bearer NEW_ACCESS"]);
 }
@@ -183,7 +201,10 @@ async fn end_to_end_invalid_grant_flips_needs_reauth_and_preserves_tokens() {
     let auth_state = Arc::new(AuthState::new());
     let svc = build_service(&server, repo.clone(), auth_state.clone());
 
-    let err = svc.get("/v1/me").await.expect_err("invalid_grant must surface");
+    let err = svc
+        .get("/v1/me")
+        .await
+        .expect_err("invalid_grant must surface");
     assert!(matches!(err, ServiceError::NeedsReauth), "got {err:?}");
     assert!(auth_state.needs_reauth(), "invalid_grant flips NeedsReauth");
 

@@ -158,8 +158,12 @@ async fn exchange_code_posts_authorization_code_grant_and_parses_tokens() {
     assert_eq!(tokens.access_token, "ACCESS_1");
     assert_eq!(tokens.refresh_token.as_deref(), Some("REFRESH_1"));
 
-    let body = String::from_utf8(server.received_requests().await.unwrap()[0].body.clone()).unwrap();
-    assert!(body.contains("grant_type=authorization_code"), "body: {body}");
+    let body =
+        String::from_utf8(server.received_requests().await.unwrap()[0].body.clone()).unwrap();
+    assert!(
+        body.contains("grant_type=authorization_code"),
+        "body: {body}"
+    );
     assert!(body.contains("code=AUTH_CODE"), "body: {body}");
     assert!(
         body.contains("redirect_uri=http%3A%2F%2F127.0.0.1%3A8080%2Fauth%2Fspotify%2Fcallback"),
@@ -182,7 +186,10 @@ async fn exchange_code_maps_invalid_grant() {
         .exchange_code("BAD", "http://127.0.0.1:8080/auth/spotify/callback")
         .await
         .expect_err("400 invalid_grant must surface");
-    assert!(matches!(err, TokenExchangeError::InvalidGrant), "got {err:?}");
+    assert!(
+        matches!(err, TokenExchangeError::InvalidGrant),
+        "got {err:?}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -47,7 +47,10 @@ impl SpotifyClient for ScriptedSpotify {
         _path: &str,
         access_token: &str,
     ) -> Result<Option<Value>, SpotifyError> {
-        self.seen_tokens.lock().unwrap().push(access_token.to_string());
+        self.seen_tokens
+            .lock()
+            .unwrap()
+            .push(access_token.to_string());
         match self
             .script
             .lock()
@@ -90,10 +93,19 @@ impl StubExchanger {
 impl TokenExchanger for StubExchanger {
     async fn refresh(&self, refresh_token: &str) -> Result<RefreshedTokens, TokenExchangeError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        self.seen_refresh.lock().unwrap().push(refresh_token.to_string());
+        self.seen_refresh
+            .lock()
+            .unwrap()
+            .push(refresh_token.to_string());
         // Clone-or-move the single programmed result. Tests call refresh at
         // most once, so taking it is fine; a second call panics loudly.
-        match self.result.lock().unwrap().take().expect("StubExchanger refreshed twice") {
+        match self
+            .result
+            .lock()
+            .unwrap()
+            .take()
+            .expect("StubExchanger refreshed twice")
+        {
             Ok(r) => Ok(r),
             Err(e) => Err(e),
         }
@@ -159,8 +171,8 @@ fn service(
 async fn on_401_refreshes_upserts_and_retries_once_succeeding() {
     let repo = Arc::new(MemRepo::with(seed_token()));
     let spotify = Arc::new(ScriptedSpotify::new(vec![
-        Err(401),                         // first attempt → 401
-        Ok(json!({"playing": false})),    // retry → 200
+        Err(401),                      // first attempt → 401
+        Ok(json!({"playing": false})), // retry → 200
     ]));
     let oauth = Arc::new(StubExchanger::ok(RefreshedTokens {
         access_token: "NEW_ACCESS".to_string(),
@@ -169,26 +181,46 @@ async fn on_401_refreshes_upserts_and_retries_once_succeeding() {
         scope: Some("user-read-private".to_string()),
     }));
     let auth_state = Arc::new(AuthState::new());
-    let svc = service(repo.clone(), spotify.clone(), oauth.clone(), auth_state.clone());
+    let svc = service(
+        repo.clone(),
+        spotify.clone(),
+        oauth.clone(),
+        auth_state.clone(),
+    );
 
-    let v = svc.get("/v1/me/player").await.expect("must succeed after refresh+retry");
+    let v = svc
+        .get("/v1/me/player")
+        .await
+        .expect("must succeed after refresh+retry");
     assert_eq!(v, Some(json!({"playing": false})));
 
     // Refresh ran exactly once with the OLD refresh token.
     assert_eq!(oauth.calls.load(Ordering::SeqCst), 1);
-    assert_eq!(oauth.seen_refresh.lock().unwrap().as_slice(), &["OLD_REFRESH"]);
+    assert_eq!(
+        oauth.seen_refresh.lock().unwrap().as_slice(),
+        &["OLD_REFRESH"]
+    );
 
     // The retry used the NEW access token (not the stale one).
     let seen = spotify.seen_tokens.lock().unwrap().clone();
-    assert_eq!(seen, vec!["OLD_ACCESS".to_string(), "NEW_ACCESS".to_string()]);
+    assert_eq!(
+        seen,
+        vec!["OLD_ACCESS".to_string(), "NEW_ACCESS".to_string()]
+    );
 
     // The rotated token-set was persisted.
     let stored = repo.snapshot().unwrap();
     assert_eq!(stored.access_token, "NEW_ACCESS");
     assert_eq!(stored.refresh_token, "NEW_REFRESH");
-    assert!(stored.expires_at > Utc::now(), "expires_at must move into the future");
+    assert!(
+        stored.expires_at > Utc::now(),
+        "expires_at must move into the future"
+    );
 
-    assert!(!auth_state.needs_reauth(), "a successful refresh must NOT flip NeedsReauth");
+    assert!(
+        !auth_state.needs_reauth(),
+        "a successful refresh must NOT flip NeedsReauth"
+    );
 }
 
 #[tokio::test]
@@ -197,15 +229,34 @@ async fn on_401_with_invalid_grant_flips_needs_reauth_and_does_not_retry() {
     let spotify = Arc::new(ScriptedSpotify::new(vec![Err(401)])); // only the first attempt
     let oauth = Arc::new(StubExchanger::invalid_grant());
     let auth_state = Arc::new(AuthState::new());
-    let svc = service(repo.clone(), spotify.clone(), oauth.clone(), auth_state.clone());
+    let svc = service(
+        repo.clone(),
+        spotify.clone(),
+        oauth.clone(),
+        auth_state.clone(),
+    );
 
-    let err = svc.get("/v1/me").await.expect_err("invalid_grant must surface as an error");
+    let err = svc
+        .get("/v1/me")
+        .await
+        .expect_err("invalid_grant must surface as an error");
     assert!(matches!(err, ServiceError::NeedsReauth), "got {err:?}");
 
-    assert!(auth_state.needs_reauth(), "invalid_grant must flip NeedsReauth");
-    assert_eq!(oauth.calls.load(Ordering::SeqCst), 1, "refresh attempted once");
+    assert!(
+        auth_state.needs_reauth(),
+        "invalid_grant must flip NeedsReauth"
+    );
+    assert_eq!(
+        oauth.calls.load(Ordering::SeqCst),
+        1,
+        "refresh attempted once"
+    );
     // No retry: spotify saw exactly one attempt.
-    assert_eq!(spotify.seen_tokens.lock().unwrap().len(), 1, "must NOT retry after invalid_grant");
+    assert_eq!(
+        spotify.seen_tokens.lock().unwrap().len(),
+        1,
+        "must NOT retry after invalid_grant"
+    );
     // Stored tokens untouched (criterion 6: owner reauth upserts over them).
     assert_eq!(repo.snapshot().unwrap().access_token, "OLD_ACCESS");
 }
@@ -243,11 +294,22 @@ async fn retry_still_401_surfaces_upstream_without_second_refresh() {
     let auth_state = Arc::new(AuthState::new());
     let svc = service(repo, spotify.clone(), oauth.clone(), auth_state.clone());
 
-    let err = svc.get("/v1/me").await.expect_err("a persistent 401 must surface");
+    let err = svc
+        .get("/v1/me")
+        .await
+        .expect_err("a persistent 401 must surface");
     assert!(matches!(err, ServiceError::Upstream(_)), "got {err:?}");
     // Retry happened exactly once (2 attempts total), refresh exactly once.
-    assert_eq!(spotify.seen_tokens.lock().unwrap().len(), 2, "exactly one retry");
-    assert_eq!(oauth.calls.load(Ordering::SeqCst), 1, "refresh not repeated");
+    assert_eq!(
+        spotify.seen_tokens.lock().unwrap().len(),
+        2,
+        "exactly one retry"
+    );
+    assert_eq!(
+        oauth.calls.load(Ordering::SeqCst),
+        1,
+        "refresh not repeated"
+    );
     // A second 401 is an upstream failure, not a revoked grant: do NOT flip
     // NeedsReauth (only invalid_grant does that).
     assert!(!auth_state.needs_reauth());
@@ -256,7 +318,10 @@ async fn retry_still_401_surfaces_upstream_without_second_refresh() {
 #[tokio::test]
 async fn rotated_refresh_token_absent_keeps_the_old_one() {
     let repo = Arc::new(MemRepo::with(seed_token()));
-    let spotify = Arc::new(ScriptedSpotify::new(vec![Err(401), Ok(json!({"ok": true}))]));
+    let spotify = Arc::new(ScriptedSpotify::new(vec![
+        Err(401),
+        Ok(json!({"ok": true})),
+    ]));
     let oauth = Arc::new(StubExchanger::ok(RefreshedTokens {
         access_token: "NEW_ACCESS".to_string(),
         refresh_token: None, // Spotify did not rotate it
@@ -273,5 +338,8 @@ async fn rotated_refresh_token_absent_keeps_the_old_one() {
         stored.refresh_token, "OLD_REFRESH",
         "absent rotated refresh token → keep the existing one",
     );
-    assert_eq!(stored.scope, "user-read-private", "absent scope → keep the existing one");
+    assert_eq!(
+        stored.scope, "user-read-private",
+        "absent scope → keep the existing one"
+    );
 }
