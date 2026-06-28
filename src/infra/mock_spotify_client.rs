@@ -22,8 +22,7 @@ const ME: &str = include_str!("../../mock_fixtures/me.json");
 const ME_FOLLOWING: &str = include_str!("../../mock_fixtures/me_following.json");
 const ME_PLAYLISTS: &str = include_str!("../../mock_fixtures/me_playlists.json");
 const ME_PLAYER: &str = include_str!("../../mock_fixtures/me_player.json");
-const ME_PLAYER_RECENT: &str =
-    include_str!("../../mock_fixtures/me_player_recently_played.json");
+const ME_PLAYER_RECENT: &str = include_str!("../../mock_fixtures/me_player_recently_played.json");
 const ME_TOP_TRACKS: &str = include_str!("../../mock_fixtures/me_top_tracks.json");
 
 pub struct MockSpotifyClient;

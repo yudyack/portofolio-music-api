@@ -126,6 +126,7 @@ fn test_config() -> Config {
         auth_basic_password: "pw".into(),
         database_url: "sqlite::memory:".into(),
         mock_data: false,
+        scheduler: Default::default(),
     }
 }
 
@@ -154,7 +155,9 @@ async fn get(router: &axum::Router, path: &str) -> (StatusCode, Value) {
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024).await.unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024)
+        .await
+        .unwrap();
     let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     (status, body)
 }

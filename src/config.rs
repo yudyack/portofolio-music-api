@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use thiserror::Error;
 
 /// Names of env vars consumed at startup. Exposed as constants so callers and
@@ -35,6 +37,54 @@ pub struct Config {
     pub database_url: String,
     /// Serve canned Spotify fixtures instead of the real API. Off by default.
     pub mock_data: bool,
+    /// Scheduler-push pacing + activity gate (spec §5.6). Code-config, not
+    /// env-driven: tuning these is a deploy-time decision the operator
+    /// makes by editing the defaults below, not a knob to risk a
+    /// production trip on.
+    pub scheduler: SchedulerConfig,
+}
+
+/// Per-endpoint scheduler tick interval. Each `/v1/*` endpoint has its own
+/// loop in `app::scheduler` that uses the matching field here.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct SchedulerIntervals {
+    pub now: Duration,
+    pub recent: Duration,
+    pub top: Duration,
+    pub profile: Duration,
+    pub playlists: Duration,
+}
+
+impl Default for SchedulerIntervals {
+    fn default() -> Self {
+        Self {
+            // /v1/now changes constantly — keep it fresh.
+            now: Duration::from_secs(3),
+            recent: Duration::from_secs(10),
+            // Spotify recomputes top/profile/playlists slowly.
+            top: Duration::from_secs(10),
+            profile: Duration::from_secs(10),
+            playlists: Duration::from_secs(10),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct SchedulerConfig {
+    pub intervals: SchedulerIntervals,
+    /// Idle threshold for `ActivityTracker`. If no `/v1/*` request has
+    /// landed within this window, the schedulers park on
+    /// `ActivityTracker::woke` until a visitor arrives.
+    pub idle_threshold: Duration,
+}
+
+impl Default for SchedulerConfig {
+    fn default() -> Self {
+        Self {
+            intervals: SchedulerIntervals::default(),
+            idle_threshold: Duration::from_secs(60),
+        }
+    }
 }
 
 /// Hand-rolled Debug that redacts secret fields. Pre-arms criterion 13:
@@ -52,6 +102,7 @@ impl std::fmt::Debug for Config {
             .field("spotify_redirect_uri", &self.spotify_redirect_uri)
             .field("database_url", &self.database_url)
             .field("mock_data", &self.mock_data)
+            .field("scheduler", &self.scheduler)
             .finish()
     }
 }
@@ -89,6 +140,9 @@ impl Config {
             // Any non-empty value enables mock mode; "0"/"false" also count
             // because the explicit user intent is "this var is set".
             mock_data: get(MOCK_DATA).map(|v| !v.is_empty()).unwrap_or(false),
+            // Code-config — not env-driven. Defaults bake in the spec §5.6
+            // numbers; operators edit the source if they ever need to tune.
+            scheduler: SchedulerConfig::default(),
         })
     }
 }

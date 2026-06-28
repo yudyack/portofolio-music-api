@@ -77,6 +77,7 @@ fn cfg(mock: bool) -> Config {
         auth_basic_password: "pw".into(),
         database_url: "sqlite::memory:".into(),
         mock_data: mock,
+        scheduler: Default::default(),
     }
 }
 
@@ -103,8 +104,13 @@ async fn get(router: &axum::Router, path: &str) -> (StatusCode, Value) {
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 256 * 1024).await.unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    let bytes = axum::body::to_bytes(resp.into_body(), 256 * 1024)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 // ---- mock-mode tag --------------------------------------------------------
@@ -158,10 +164,16 @@ async fn mock_profile_renders_full_shape_from_fixtures() {
     assert_eq!(body["handle"], "yudyack_dev");
     assert_eq!(body["display_name"], "Yudhya (mock)");
     assert_eq!(body["followers"], 64);
-    assert_eq!(body["following"], 17, "from me_following.json artists.total");
+    assert_eq!(
+        body["following"], 17,
+        "from me_following.json artists.total"
+    );
     assert_eq!(body["playlists_count"], 9, "from me_playlists.json total");
     assert!(
-        body["avatar"].as_str().unwrap().starts_with("https://i.scdn.co/"),
+        body["avatar"]
+            .as_str()
+            .unwrap()
+            .starts_with("https://i.scdn.co/"),
         "avatar should be a Spotify-CDN-shaped URL",
     );
     assert_eq!(body["_mock"], Value::Bool(true));

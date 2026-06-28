@@ -73,7 +73,10 @@ fn full_spotify_env() -> [(&'static str, &'static str); 6] {
         ("AUTH_BASIC_PASSWORD", "hunter2"),
         ("SPOTIFY_CLIENT_ID", "client123"),
         ("SPOTIFY_CLIENT_SECRET", "secret456"),
-        ("SPOTIFY_REDIRECT_URI", "https://musicapi.yudhyapw.com/auth/spotify/callback"),
+        (
+            "SPOTIFY_REDIRECT_URI",
+            "https://musicapi.yudhyapw.com/auth/spotify/callback",
+        ),
         ("DATABASE_URL", "sqlite::memory:"),
     ]
 }

@@ -64,8 +64,12 @@ impl TokenRepository for MemRepo {
             owner_id: "yudhyapw".into(),
         }))
     }
-    async fn upsert(&self, _: TokenRecord) -> Result<(), RepoError> { Ok(()) }
-    async fn delete(&self) -> Result<(), RepoError> { Ok(()) }
+    async fn upsert(&self, _: TokenRecord) -> Result<(), RepoError> {
+        Ok(())
+    }
+    async fn delete(&self) -> Result<(), RepoError> {
+        Ok(())
+    }
 }
 
 struct UnusedExchanger;
@@ -89,6 +93,7 @@ fn cfg() -> Config {
         auth_basic_password: "pw".into(),
         database_url: "sqlite::memory:".into(),
         mock_data: false,
+        scheduler: Default::default(),
     }
 }
 
@@ -113,7 +118,9 @@ async fn get_body(router: &axum::Router, path: &str) -> (StatusCode, Value) {
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 256 * 1024).await.unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), 256 * 1024)
+        .await
+        .unwrap();
     let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     (status, body)
 }
@@ -144,14 +151,33 @@ async fn profile_aggregates_followers_following_playlists_count() {
     assert_eq!(body["handle"], json!("yudyack"));
     assert_eq!(body["avatar"], json!("https://i/a.jpg"));
     assert_eq!(body["followers"], json!(64));
-    assert_eq!(body["following"], json!(17), "must come from /me/following.artists.total");
-    assert_eq!(body["playlists_count"], json!(9), "must come from /me/playlists.total");
-    assert_eq!(body["profile_url"], json!("https://open.spotify.com/user/yudyack"));
-    assert_eq!(counter.calls.load(Ordering::SeqCst), 3, "exactly 3 Spotify calls");
+    assert_eq!(
+        body["following"],
+        json!(17),
+        "must come from /me/following.artists.total"
+    );
+    assert_eq!(
+        body["playlists_count"],
+        json!(9),
+        "must come from /me/playlists.total"
+    );
+    assert_eq!(
+        body["profile_url"],
+        json!("https://open.spotify.com/user/yudyack")
+    );
+    assert_eq!(
+        counter.calls.load(Ordering::SeqCst),
+        3,
+        "exactly 3 Spotify calls"
+    );
 
     // Second request → all from cache, no extra Spotify calls.
     let (_, _) = get_body(&router, "/v1/profile").await;
-    assert_eq!(counter.calls.load(Ordering::SeqCst), 3, "cache hit: no new calls");
+    assert_eq!(
+        counter.calls.load(Ordering::SeqCst),
+        3,
+        "cache hit: no new calls"
+    );
 }
 
 #[tokio::test]
@@ -168,7 +194,11 @@ async fn profile_degrades_to_zero_when_count_calls_fail() {
     let (status, body) = get_body(&router, "/v1/profile").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["followers"], json!(64));
-    assert_eq!(body["following"], json!(0), "fallback to 0 on count-call failure");
+    assert_eq!(
+        body["following"],
+        json!(0),
+        "fallback to 0 on count-call failure"
+    );
     assert_eq!(body["playlists_count"], json!(0));
 }
 
@@ -209,7 +239,11 @@ async fn recent_caches_for_60s() {
     let (router, counter) = build_app(vec![("/v1/me/player/recently-played?limit=20", recent)]);
     let _ = get_body(&router, "/v1/recent").await;
     let _ = get_body(&router, "/v1/recent").await;
-    assert_eq!(counter.calls.load(Ordering::SeqCst), 1, "criterion 11 — cache hit");
+    assert_eq!(
+        counter.calls.load(Ordering::SeqCst),
+        1,
+        "criterion 11 — cache hit"
+    );
 }
 
 // ---- /v1/top/tracks ----------------------------------------------------
@@ -224,9 +258,10 @@ async fn top_tracks_assigns_one_indexed_rank() {
              "album": {"name":"AL2", "images": [{"url":"https://i/2.jpg"}]}}
         ]
     });
-    let (router, _) = build_app(vec![
-        ("/v1/me/top/tracks?time_range=short_term&limit=10", top),
-    ]);
+    let (router, _) = build_app(vec![(
+        "/v1/me/top/tracks?time_range=short_term&limit=10",
+        top,
+    )]);
     let (status, body) = get_body(&router, "/v1/top/tracks").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["range"], json!("short_term"));

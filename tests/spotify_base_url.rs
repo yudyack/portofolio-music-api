@@ -17,10 +17,8 @@ use std::path::Path;
 
 #[test]
 fn lib_rs_wires_spotify_client_with_versionless_base_url() {
-    let src = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"),
-    )
-    .expect("read src/lib.rs");
+    let src = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"))
+        .expect("read src/lib.rs");
 
     // Production must reference exactly `"https://api.spotify.com"` and NOT
     // any path-bearing variant. The check is intentionally narrow: forbids

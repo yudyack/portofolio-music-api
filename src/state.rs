@@ -3,7 +3,8 @@
 
 use std::sync::Arc;
 
-use crate::app::cache::Cache;
+use crate::app::activity::ActivityTracker;
+use crate::app::snapshots::Snapshots;
 use crate::app::spotify_service::SpotifyService;
 use crate::app::state_store::StateStore;
 use crate::config::Config;
@@ -26,9 +27,14 @@ pub struct AppState {
     /// (`/auth/spotify/*`) uses `spotify` directly — different path, no
     /// token-rotation concerns there.
     pub(crate) spotify_service: Arc<SpotifyService>,
-    /// In-memory `/v1/*` cache (criterion 11). Lives only as long as the
-    /// process — Spotify content is never persisted (spec §5.6).
-    pub(crate) cache: Arc<Cache>,
+    /// In-memory snapshots populated by the per-endpoint scheduler tasks
+    /// (`app::scheduler`). Handlers read from here first; on `None` they
+    /// fall through to a synchronous fetch+store (cold-start case).
+    /// Spotify content is never persisted (spec §5.6).
+    pub snapshots: Arc<Snapshots>,
+    /// Activity gate for the schedulers. Middleware on `/v1/*` calls
+    /// `touch()`; the schedulers park on `activity.woke` while idle.
+    pub activity: Arc<ActivityTracker>,
 }
 
 impl AppState {
@@ -46,7 +52,8 @@ impl AppState {
             oauth.clone(),
             auth_state.clone(),
         ));
-        let cache = Arc::new(Cache::new());
+        let snapshots = Arc::new(Snapshots::new());
+        let activity = Arc::new(ActivityTracker::new(config.scheduler.idle_threshold));
         Self {
             config,
             tokens,
@@ -55,7 +62,8 @@ impl AppState {
             auth_state,
             state_store,
             spotify_service,
-            cache,
+            snapshots,
+            activity,
         }
     }
 

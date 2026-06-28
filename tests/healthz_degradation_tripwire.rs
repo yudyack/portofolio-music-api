@@ -41,9 +41,7 @@ fn src_files() -> Vec<(PathBuf, String)> {
 #[ignore = "Tripwire: unignore when cycle 10 wires the refresher / upstream-probe degradation signal. src/ must reference the \"degraded\" status literal so healthz can emit it."]
 fn healthz_emits_degraded_status_literal() {
     let files = src_files();
-    let has_degraded_literal = files
-        .iter()
-        .any(|(_, body)| body.contains("\"degraded\""));
+    let has_degraded_literal = files.iter().any(|(_, body)| body.contains("\"degraded\""));
     assert!(
         has_degraded_literal,
         "no src/ file references the literal \"degraded\" — healthz status is hardcoded \
