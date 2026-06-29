@@ -5,15 +5,26 @@ async fn main() {
     // Load a local .env if present (dev convenience; no-op in prod).
     let _ = dotenvy::dotenv();
 
-    // Default filter is `info`. Wire-level body logs (FE responses,
-    // Spotify response bodies) are at `debug` — set
-    // `RUST_LOG=music_api::wire=debug` to capture payloads, or
-    // `RUST_LOG=music_api::wire::spotify_oauth=debug` for OAuth only.
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .init();
+    // Log filter:
+    //   - Base is RUST_LOG if set, else `info`.
+    //   - WIRE_BODIES=1 ADDITIVELY appends `music_api::wire=debug` to the base
+    //     so the body-bearing wire logs (Spotify response bodies, FE response
+    //     bodies) surface without having to remember the tracing target
+    //     syntax. Toggle is additive so a custom RUST_LOG isn't clobbered.
+    let wire_bodies = std::env::var("WIRE_BODIES")
+        .map(|v| !v.is_empty())
+        .unwrap_or(false);
+    let base = std::env::var("RUST_LOG")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "info".to_string());
+    let filter_str = if wire_bodies {
+        format!("{base},music_api::wire=debug")
+    } else {
+        base
+    };
+    let filter = EnvFilter::try_new(&filter_str).unwrap_or_else(|_| EnvFilter::new("info"));
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 
     // Cycle 7: all startup work lives in music_api::init() — config parse,
     // sqlite connect (WAL + busy_timeout), migrations (criterion 21),
