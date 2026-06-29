@@ -57,6 +57,18 @@ cargo clippy --lib -- -D warnings    # clean for the library
 `cargo clippy --all-targets -- -D warnings` may surface pre-existing test-only
 lints that are not your problem — verify by stashing your changes and re-running.
 
+## Branching & PRs
+
+Never commit directly to `main`. For any change, however small:
+
+1. Branch off `main` (e.g. `feature/<feature-name>` matching the commit prefix).
+2. Atomic commits on that branch (see "Atomic commits" above).
+3. Push and open a PR with `gh pr create`.
+4. Merge only after the PR is reviewed and CI is green.
+
+This applies to docs and one-line fixes too — `main` should only move via PR
+merges so the submodule pointer in the parent always tracks a reviewed commit.
+
 ## Submodule etiquette
 
 Workflow when shipping work that spans both repos:
