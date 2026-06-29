@@ -52,6 +52,16 @@ struct TokenResponseDto {
     scope: Option<String>,
 }
 
+/// Mask a token-like string for logging — show a short prefix and the
+/// total length so refreshes are distinguishable without exposing the
+/// secret material in plaintext.
+fn mask_token(s: &str) -> String {
+    if s.len() <= 8 {
+        return "***".to_string();
+    }
+    format!("{}…(len={})", &s[..6], s.len())
+}
+
 impl ReqwestTokenExchanger {
     /// POST the form to the token endpoint and map the response. Shared by
     /// both grants — only the form fields differ.
@@ -59,6 +69,20 @@ impl ReqwestTokenExchanger {
         &self,
         form: &[(&str, &str)],
     ) -> Result<RefreshedTokens, TokenExchangeError> {
+        let grant_type = form
+            .iter()
+            .find(|(k, _)| *k == "grant_type")
+            .map(|(_, v)| *v)
+            .unwrap_or("");
+        tracing::info!(
+            target: "music_api::wire::spotify_oauth",
+            direction = "→",
+            method = "POST",
+            url = %self.token_url,
+            grant_type = grant_type,
+            "spotify oauth request",
+        );
+
         let resp = self
             .client
             .post(&self.token_url)
@@ -76,12 +100,25 @@ impl ReqwestTokenExchanger {
                 .json()
                 .await
                 .map_err(|e| TokenExchangeError::Decode(e.to_string()))?;
+            tracing::info!(
+                target: "music_api::wire::spotify_oauth",
+                direction = "←",
+                status = 400,
+                body = %body,
+                "spotify oauth response (bad request)",
+            );
             if body.get("error").and_then(|e| e.as_str()) == Some("invalid_grant") {
                 return Err(TokenExchangeError::InvalidGrant);
             }
             return Err(TokenExchangeError::Status(400));
         }
         if !status.is_success() {
+            tracing::info!(
+                target: "music_api::wire::spotify_oauth",
+                direction = "←",
+                status = status.as_u16(),
+                "spotify oauth response (error)",
+            );
             return Err(TokenExchangeError::Status(status.as_u16()));
         }
 
@@ -89,6 +126,20 @@ impl ReqwestTokenExchanger {
             .json()
             .await
             .map_err(|e| TokenExchangeError::Decode(e.to_string()))?;
+        tracing::info!(
+            target: "music_api::wire::spotify_oauth",
+            direction = "←",
+            status = status.as_u16(),
+            access_token = %mask_token(&dto.access_token),
+            refresh_token = %dto
+                .refresh_token
+                .as_deref()
+                .map(mask_token)
+                .unwrap_or_else(|| "<absent>".to_string()),
+            expires_in = dto.expires_in,
+            scope = dto.scope.as_deref().unwrap_or(""),
+            "spotify oauth response",
+        );
         Ok(RefreshedTokens {
             access_token: dto.access_token,
             refresh_token: dto.refresh_token,

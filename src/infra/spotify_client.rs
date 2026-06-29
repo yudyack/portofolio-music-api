@@ -94,6 +94,13 @@ impl SpotifyClient for ReqwestSpotifyClient {
         access_token: &str,
     ) -> Result<Option<serde_json::Value>, SpotifyError> {
         let url = format!("{}{}", self.base_url, path);
+        tracing::info!(
+            target: "music_api::wire::spotify",
+            direction = "→",
+            method = "GET",
+            url = %url,
+            "spotify request",
+        );
         let response = self
             .client
             .get(&url)
@@ -103,17 +110,44 @@ impl SpotifyClient for ReqwestSpotifyClient {
             .map_err(|e| SpotifyError::Transport(e.to_string()))?;
         let status = response.status();
         if !status.is_success() {
+            // Surface error responses' body too — Spotify often returns
+            // `{"error": {"status":..., "message":...}}` which is essential
+            // for debugging 401s, 403s, and 429 ceilings.
+            let body = response.text().await.unwrap_or_default();
+            tracing::info!(
+                target: "music_api::wire::spotify",
+                direction = "←",
+                url = %url,
+                status = status.as_u16(),
+                body = %body,
+                "spotify response (error)",
+            );
             return Err(SpotifyError::Status(status.as_u16()));
         }
         // 204 No Content — Spotify's "nothing playing" signal for
         // /me/player. Distinct from 200 with a JSON `null` body.
         if status.as_u16() == 204 {
+            tracing::info!(
+                target: "music_api::wire::spotify",
+                direction = "←",
+                url = %url,
+                status = 204,
+                "spotify response (no content)",
+            );
             return Ok(None);
         }
-        response
+        let body = response
             .json::<serde_json::Value>()
             .await
-            .map(Some)
-            .map_err(|e| SpotifyError::Decode(e.to_string()))
+            .map_err(|e| SpotifyError::Decode(e.to_string()))?;
+        tracing::info!(
+            target: "music_api::wire::spotify",
+            direction = "←",
+            url = %url,
+            status = status.as_u16(),
+            body = %body,
+            "spotify response",
+        );
+        Ok(Some(body))
     }
 }

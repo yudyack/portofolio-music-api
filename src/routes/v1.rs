@@ -71,11 +71,17 @@ pub async fn playlists(State(state): State<AppState>) -> Response {
 // ---- shared 3-step handler ---------------------------------------------
 
 async fn serve(state: AppState, kind: EndpointKind) -> Response {
+    tracing::info!(
+        target: "music_api::wire::fe",
+        direction = "→",
+        endpoint = ?kind,
+        "frontend request",
+    );
     if state.auth_state.needs_reauth() {
-        return needs_reauth();
+        return log_fe_response(kind, 503, json!({"error": "needs_reauth"}));
     }
     if let Some(snapshot) = state.snapshots.get(kind) {
-        return (StatusCode::OK, Json(snapshot)).into_response();
+        return log_fe_response(kind, 200, snapshot);
     }
     // Cold start — no scheduler tick has resolved yet. Do ONE synchronous
     // fetch + map (same code path the scheduler uses) and store it so the
@@ -86,23 +92,32 @@ async fn serve(state: AppState, kind: EndpointKind) -> Response {
     match fetch_and_map(&state, kind).await {
         Ok(payload) => {
             state.snapshots.set(kind, Some(payload.clone()));
-            (StatusCode::OK, Json(payload)).into_response()
+            log_fe_response(kind, 200, payload)
         }
-        Err(e) => fetch_error_to_response(e),
+        Err(e) => fetch_error_to_response(kind, e),
     }
 }
 
-fn needs_reauth() -> Response {
-    (
-        StatusCode::SERVICE_UNAVAILABLE,
-        Json(json!({"error": "needs_reauth"})),
-    )
-        .into_response()
+/// Build a JSON response while also emitting a `wire::fe` log line with
+/// the outbound body. Returning through this helper keeps the
+/// status-code/body that the FE sees and the status-code/body that we
+/// log in sync, even as new error branches are added.
+fn log_fe_response(kind: EndpointKind, status: u16, body: serde_json::Value) -> Response {
+    tracing::info!(
+        target: "music_api::wire::fe",
+        direction = "←",
+        endpoint = ?kind,
+        status = status,
+        body = %body,
+        "frontend response",
+    );
+    let code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    (code, Json(body)).into_response()
 }
 
-fn fetch_error_to_response(e: FetchError) -> Response {
+fn fetch_error_to_response(kind: EndpointKind, e: FetchError) -> Response {
     match e {
-        FetchError::NeedsReauth => needs_reauth(),
+        FetchError::NeedsReauth => log_fe_response(kind, 503, json!({"error": "needs_reauth"})),
         FetchError::Upstream(s) => {
             // Criterion 19: on the cold-start path (snapshot empty) an upstream
             // failure surfaces as 503 `{error:"upstream_unavailable"}` — not
@@ -110,19 +125,11 @@ fn fetch_error_to_response(e: FetchError) -> Response {
             // state. A snapshot present case is served upstream of this
             // mapping, so reaching here means no snapshot exists yet.
             tracing::warn!(error = %s, "spotify upstream failure");
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({"error": "upstream_unavailable"})),
-            )
-                .into_response()
+            log_fe_response(kind, 503, json!({"error": "upstream_unavailable"}))
         }
         FetchError::Repo(s) => {
             tracing::error!(error = %s, "token repo lookup failed");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": "repo"})),
-            )
-                .into_response()
+            log_fe_response(kind, 500, json!({"error": "repo"}))
         }
     }
 }
