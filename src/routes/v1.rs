@@ -98,17 +98,30 @@ async fn serve(state: AppState, kind: EndpointKind) -> Response {
     }
 }
 
-/// Build a JSON response while also emitting a `wire::fe` log line with
-/// the outbound body. Returning through this helper keeps the
-/// status-code/body that the FE sees and the status-code/body that we
-/// log in sync, even as new error branches are added.
+/// Build a JSON response while also emitting `wire::fe` log lines.
+/// Returning through this helper keeps the status-code/body that the FE
+/// sees and the status-code/body that we log in sync, even as new error
+/// branches are added.
+///
+/// Two log levels: info carries status + endpoint + byte size (cheap
+/// state-change signal, safe at default RUST_LOG); debug carries the
+/// full body (opt-in via `RUST_LOG=music_api::wire::fe=debug`).
 fn log_fe_response(kind: EndpointKind, status: u16, body: serde_json::Value) -> Response {
+    let body_str = body.to_string();
+    tracing::debug!(
+        target: "music_api::wire::fe",
+        direction = "←",
+        endpoint = ?kind,
+        status = status,
+        body = %body_str,
+        "frontend response (body)",
+    );
     tracing::info!(
         target: "music_api::wire::fe",
         direction = "←",
         endpoint = ?kind,
         status = status,
-        body = %body,
+        bytes = body_str.len(),
         "frontend response",
     );
     let code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);

@@ -5,6 +5,10 @@ async fn main() {
     // Load a local .env if present (dev convenience; no-op in prod).
     let _ = dotenvy::dotenv();
 
+    // Default filter is `info`. Wire-level body logs (FE responses,
+    // Spotify response bodies) are at `debug` — set
+    // `RUST_LOG=music_api::wire=debug` to capture payloads, or
+    // `RUST_LOG=music_api::wire::spotify_oauth=debug` for OAuth only.
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),

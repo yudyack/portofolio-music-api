@@ -98,23 +98,39 @@ impl ReqwestTokenExchanger {
                 .json()
                 .await
                 .map_err(|e| TokenExchangeError::Decode(e.to_string()))?;
-            tracing::info!(
+            // Per RFC 6749 §5.2 the body's `error_description` may echo
+            // offending grant material (e.g. the authorization code).
+            // Log only the parsed `error` discriminant — diagnostic and
+            // PII/secret-free.
+            let error_kind = body
+                .get("error")
+                .and_then(|e| e.as_str())
+                .unwrap_or("<unknown>");
+            tracing::warn!(
                 target: "music_api::wire::spotify_oauth",
                 direction = "←",
                 status = 400,
-                body = %body,
+                error = %error_kind,
                 "spotify oauth response (bad request)",
             );
-            if body.get("error").and_then(|e| e.as_str()) == Some("invalid_grant") {
+            if error_kind == "invalid_grant" {
                 return Err(TokenExchangeError::InvalidGrant);
             }
             return Err(TokenExchangeError::Status(400));
         }
         if !status.is_success() {
-            tracing::info!(
+            // Capture a capped body preview for 401/5xx diagnosis. Token-
+            // endpoint error envelopes are diagnostic strings only (no
+            // user PII); 256 chars is enough for `invalid_client` style
+            // shapes and defends against unbounded edge responses.
+            let body = resp.text().await.unwrap_or_default();
+            let body_preview: String = body.chars().take(256).collect();
+            tracing::warn!(
                 target: "music_api::wire::spotify_oauth",
                 direction = "←",
                 status = status.as_u16(),
+                bytes = body.len(),
+                body_preview = %body_preview,
                 "spotify oauth response (error)",
             );
             return Err(TokenExchangeError::Status(status.as_u16()));

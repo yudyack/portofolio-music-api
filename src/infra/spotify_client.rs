@@ -94,6 +94,8 @@ impl SpotifyClient for ReqwestSpotifyClient {
         access_token: &str,
     ) -> Result<Option<serde_json::Value>, SpotifyError> {
         let url = format!("{}{}", self.base_url, path);
+        // Request line stays at info — url + method only, no PII, useful
+        // traffic signal that survives the default RUST_LOG.
         tracing::info!(
             target: "music_api::wire::spotify",
             direction = "→",
@@ -110,16 +112,18 @@ impl SpotifyClient for ReqwestSpotifyClient {
             .map_err(|e| SpotifyError::Transport(e.to_string()))?;
         let status = response.status();
         if !status.is_success() {
-            // Surface error responses' body too — Spotify often returns
-            // `{"error": {"status":..., "message":...}}` which is essential
-            // for debugging 401s, 403s, and 429 ceilings.
+            // Error envelopes (`{"error":{"status":..,"message":..}}`) are
+            // load-bearing for diagnosing 401/403/429 but uncapped foreign
+            // bytes off an edge CDN are not — cap the prefix at 256 chars.
             let body = response.text().await.unwrap_or_default();
-            tracing::info!(
+            let body_preview: String = body.chars().take(256).collect();
+            tracing::warn!(
                 target: "music_api::wire::spotify",
                 direction = "←",
                 url = %url,
                 status = status.as_u16(),
-                body = %body,
+                bytes = body.len(),
+                body_preview = %body_preview,
                 "spotify response (error)",
             );
             return Err(SpotifyError::Status(status.as_u16()));
@@ -127,7 +131,7 @@ impl SpotifyClient for ReqwestSpotifyClient {
         // 204 No Content — Spotify's "nothing playing" signal for
         // /me/player. Distinct from 200 with a JSON `null` body.
         if status.as_u16() == 204 {
-            tracing::info!(
+            tracing::debug!(
                 target: "music_api::wire::spotify",
                 direction = "←",
                 url = %url,
@@ -140,7 +144,11 @@ impl SpotifyClient for ReqwestSpotifyClient {
             .json::<serde_json::Value>()
             .await
             .map_err(|e| SpotifyError::Decode(e.to_string()))?;
-        tracing::info!(
+        // Body at debug — opt-in via RUST_LOG=music_api::wire=debug. The
+        // default `info` deploy must not stream Spotify response bodies
+        // (PII + ai-spotify.md "do not cache Spotify content beyond what
+        // is needed for immediate use").
+        tracing::debug!(
             target: "music_api::wire::spotify",
             direction = "←",
             url = %url,
