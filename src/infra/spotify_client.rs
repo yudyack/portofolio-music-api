@@ -28,6 +28,7 @@ use governor::{Quota, RateLimiter};
 use reqwest_middleware::ClientWithMiddleware;
 
 use crate::domain::spotify::{SpotifyClient, SpotifyError};
+use crate::infra::http_logging::{LoggingMiddleware, WireTarget};
 use crate::infra::spotify_backoff::{BackoffConfig, BackoffMiddleware};
 use crate::infra::spotify_governor::GovernorMiddleware;
 use crate::infra::spotify_retry::RetryAfterMiddleware;
@@ -77,7 +78,12 @@ impl ReqwestSpotifyClient {
             // governor so each backoff retry consumes a fresh token
             // (criterion 9 layering invariant).
             .with(BackoffMiddleware::new(backoff))
-            // Third .with() → innermost: every attempt (initial OR any
+            // Third .with() → per-attempt logging. Inside the retry
+            // middlewares above so 429/5xx retries each produce their own
+            // outbound+response log pair (closes architect F3). Outside
+            // the governor so the log fires just before the actual send.
+            .with(LoggingMiddleware::new(WireTarget::SpotifyHttp))
+            // Fourth .with() → innermost: every attempt (initial OR any
             // retry) acquires a fresh governor permit before reqwest sees
             // the request.
             .with(GovernorMiddleware { limiter })
@@ -94,15 +100,9 @@ impl SpotifyClient for ReqwestSpotifyClient {
         access_token: &str,
     ) -> Result<Option<serde_json::Value>, SpotifyError> {
         let url = format!("{}{}", self.base_url, path);
-        // Request line stays at info — url + method only, no PII, useful
-        // traffic signal that survives the default RUST_LOG.
-        tracing::info!(
-            target: "music_api::wire::spotify",
-            direction = "→",
-            method = "GET",
-            url = %url,
-            "spotify request",
-        );
+        // Outbound request log is emitted by LoggingMiddleware (per
+        // attempt, including retries). Application-level logs below
+        // carry the body — middleware never reads or logs it.
         let response = self
             .client
             .get(&url)
@@ -129,15 +129,10 @@ impl SpotifyClient for ReqwestSpotifyClient {
             return Err(SpotifyError::Status(status.as_u16()));
         }
         // 204 No Content — Spotify's "nothing playing" signal for
-        // /me/player. Distinct from 200 with a JSON `null` body.
+        // /me/player. Distinct from 200 with a JSON `null` body. The
+        // status itself is logged by LoggingMiddleware; no body to
+        // emit at the app layer.
         if status.as_u16() == 204 {
-            tracing::debug!(
-                target: "music_api::wire::spotify",
-                direction = "←",
-                url = %url,
-                status = 204,
-                "spotify response (no content)",
-            );
             return Ok(None);
         }
         let body = response

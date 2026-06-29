@@ -9,17 +9,19 @@
 //! `ReqwestSpotifyClient` wraps its data client.
 
 use async_trait::async_trait;
-use reqwest::{Client, StatusCode};
+use reqwest::StatusCode;
+use reqwest_middleware::ClientWithMiddleware;
 use serde::Deserialize;
 
 use crate::domain::oauth_client::{RefreshedTokens, TokenExchangeError, TokenExchanger};
+use crate::infra::http_logging::{LoggingMiddleware, WireTarget};
 
 pub struct ReqwestTokenExchanger {
     /// Full token endpoint, e.g. `https://accounts.spotify.com/api/token`.
     token_url: String,
     client_id: String,
     client_secret: String,
-    client: Client,
+    client: ClientWithMiddleware,
 }
 
 impl ReqwestTokenExchanger {
@@ -28,9 +30,16 @@ impl ReqwestTokenExchanger {
         client_id: String,
         client_secret: String,
     ) -> Result<Self, TokenExchangeError> {
-        let client = Client::builder()
+        // Wrap the OAuth client in a `ClientWithMiddleware` so the
+        // unified `LoggingMiddleware` fires here too. The chain is
+        // just logging (no pacing / retry): token refreshes are rare
+        // and target a different host than the data API.
+        let raw = reqwest::Client::builder()
             .build()
             .map_err(|e| TokenExchangeError::Transport(e.to_string()))?;
+        let client = reqwest_middleware::ClientBuilder::new(raw)
+            .with(LoggingMiddleware::new(WireTarget::SpotifyOAuthHttp))
+            .build();
         Ok(Self {
             token_url,
             client_id,
@@ -71,11 +80,13 @@ impl ReqwestTokenExchanger {
         grant_type: &'static str,
         form: &[(&str, &str)],
     ) -> Result<RefreshedTokens, TokenExchangeError> {
+        // Outbound HTTP log (URL + POST + elapsed) is emitted by
+        // LoggingMiddleware on the wrapped client below. App-layer log
+        // here adds OAuth semantics (the grant_type) that the generic
+        // middleware doesn't see.
         tracing::info!(
             target: "music_api::wire::spotify_oauth",
             direction = "→",
-            method = "POST",
-            url = %self.token_url,
             grant_type = grant_type,
             "spotify oauth request",
         );
