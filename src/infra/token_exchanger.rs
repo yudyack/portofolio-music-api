@@ -52,14 +52,12 @@ struct TokenResponseDto {
     scope: Option<String>,
 }
 
-/// Mask a token-like string for logging — show a short prefix and the
-/// total length so refreshes are distinguishable without exposing the
-/// secret material in plaintext.
-fn mask_token(s: &str) -> String {
-    if s.len() <= 8 {
-        return "***".to_string();
-    }
-    format!("{}…(len={})", &s[..6], s.len())
+/// Mask a token-like string for logging. The length is emitted as a
+/// rotation signal (a refresh that changes token length is observable);
+/// no token bytes are exposed. Matches the repo's `<redacted>` precedent
+/// (`Config::Debug` in `src/config.rs`, pinned by `tests/debug_redaction.rs`).
+pub(crate) fn mask_token(s: &str) -> String {
+    format!("<redacted len={}>", s.len())
 }
 
 impl ReqwestTokenExchanger {
@@ -146,6 +144,57 @@ impl ReqwestTokenExchanger {
             expires_in: dto.expires_in,
             scope: dto.scope,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Pin the redaction invariant added by this PR. A future refactor that
+    //! drops the `<redacted>` marker or re-introduces a plaintext prefix
+    //! must fail compile/test, not silently in prod logs. Mirrors the
+    //! Config::Debug pattern in `tests/debug_redaction.rs`.
+    use super::mask_token;
+
+    const TOKEN_SENTINEL: &str = "S3CR3T-ACCESS-TOKEN-SHOULD-NEVER-APPEAR-IN-FULL-XYZ";
+
+    #[test]
+    fn mask_token_does_not_contain_full_input() {
+        let out = mask_token(TOKEN_SENTINEL);
+        assert!(
+            !out.contains(TOKEN_SENTINEL),
+            "mask_token must not echo its input. Got:\n{out}",
+        );
+        // Defend against a future refactor re-introducing a prefix: no
+        // contiguous 6-char slice of the sentinel may appear in the output.
+        for i in 0..=TOKEN_SENTINEL.len() - 6 {
+            let slice = &TOKEN_SENTINEL[i..i + 6];
+            assert!(
+                !out.contains(slice),
+                "mask_token leaked a 6-char slice {slice:?} of the input. Got:\n{out}",
+            );
+        }
+    }
+
+    #[test]
+    fn mask_token_uses_redacted_marker() {
+        let out = mask_token("anything");
+        assert!(
+            out.contains("<redacted"),
+            "mask_token must mark redacted output with the literal \"<redacted\" \
+             so a future Debug-style refactor cannot silently un-redact. Got:\n{out}",
+        );
+    }
+
+    #[test]
+    fn mask_token_preserves_length_signal() {
+        // Spotify access tokens are typically 43 chars; the length is the
+        // rotation-diagnostic value the masked form must preserve.
+        let input = "x".repeat(43);
+        let out = mask_token(&input);
+        assert!(
+            out.contains("len=43"),
+            "mask_token must surface the length as `len=N`. Got:\n{out}",
+        );
     }
 }
 
