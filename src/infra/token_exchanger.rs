@@ -62,16 +62,15 @@ pub(crate) fn mask_token(s: &str) -> String {
 
 impl ReqwestTokenExchanger {
     /// POST the form to the token endpoint and map the response. Shared by
-    /// both grants — only the form fields differ.
+    /// both grants — only the form fields differ. `grant_type` is passed
+    /// explicitly (rather than rescanned from the form) so a future caller
+    /// that forgets to put it on the wire fails type-checking, not by
+    /// emitting an empty `grant_type` field in the log.
     async fn post_token(
         &self,
+        grant_type: &'static str,
         form: &[(&str, &str)],
     ) -> Result<RefreshedTokens, TokenExchangeError> {
-        let grant_type = form
-            .iter()
-            .find(|(k, _)| *k == "grant_type")
-            .map(|(_, v)| *v)
-            .unwrap_or("");
         tracing::info!(
             target: "music_api::wire::spotify_oauth",
             direction = "→",
@@ -217,10 +216,13 @@ mod tests {
 #[async_trait]
 impl TokenExchanger for ReqwestTokenExchanger {
     async fn refresh(&self, refresh_token: &str) -> Result<RefreshedTokens, TokenExchangeError> {
-        self.post_token(&[
-            ("grant_type", "refresh_token"),
-            ("refresh_token", refresh_token),
-        ])
+        self.post_token(
+            "refresh_token",
+            &[
+                ("grant_type", "refresh_token"),
+                ("refresh_token", refresh_token),
+            ],
+        )
         .await
     }
 
@@ -229,11 +231,14 @@ impl TokenExchanger for ReqwestTokenExchanger {
         code: &str,
         redirect_uri: &str,
     ) -> Result<RefreshedTokens, TokenExchangeError> {
-        self.post_token(&[
-            ("grant_type", "authorization_code"),
-            ("code", code),
-            ("redirect_uri", redirect_uri),
-        ])
+        self.post_token(
+            "authorization_code",
+            &[
+                ("grant_type", "authorization_code"),
+                ("code", code),
+                ("redirect_uri", redirect_uri),
+            ],
+        )
         .await
     }
 }
