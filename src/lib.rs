@@ -225,14 +225,15 @@ pub fn app(state: AppState) -> Router {
         .layer(from_fn(wire_fe_layer))
         .layer(cors_layer());
 
-    Router::new()
-        .route("/healthz", get(healthz))
-        .route("/auth/spotify/login", get(routes::auth::login))
-        .route("/auth/spotify/callback", get(routes::auth::callback))
-        // Owner-only control plane. Same Basic-auth + constant-time check
-        // as /auth/spotify/login (routes::auth::basic_auth_ok). Outside
-        // the v1 CORS layer — admin lives on the same origin as the API,
-        // never cross-origin from the leptos frontend.
+    // Owner-only control plane. Routes share one auth layer
+    // (routes::admin::auth_layer) — the same constant-time Basic-auth
+    // check /auth/spotify/login uses. Centralizing the gate in a layer
+    // (rather than re-checking it in each handler) means a future
+    // /admin/* route added to this sub-router can't accidentally ship
+    // without auth. Outside the v1 CORS layer — admin lives on the
+    // same origin as the API, never cross-origin from the leptos
+    // frontend.
+    let admin = Router::new()
         .route("/admin/spotify", get(routes::admin::get_spotify))
         .route(
             "/admin/spotify/enable",
@@ -242,6 +243,13 @@ pub fn app(state: AppState) -> Router {
             "/admin/spotify/disable",
             axum::routing::post(routes::admin::disable_spotify),
         )
+        .layer(from_fn_with_state(state.clone(), routes::admin::auth_layer));
+
+    Router::new()
+        .route("/healthz", get(healthz))
+        .route("/auth/spotify/login", get(routes::auth::login))
+        .route("/auth/spotify/callback", get(routes::auth::callback))
+        .merge(admin)
         .merge(v1)
         .with_state(state)
 }
