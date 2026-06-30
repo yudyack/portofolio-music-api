@@ -58,13 +58,18 @@ pub struct SchedulerIntervals {
 impl Default for SchedulerIntervals {
     fn default() -> Self {
         Self {
-            // /v1/now changes constantly — keep it fresh.
-            now: Duration::from_secs(3),
-            recent: Duration::from_secs(3),
-            // Spotify recomputes top/profile/playlists slowly.
-            top: Duration::from_secs(10),
-            profile: Duration::from_secs(10),
-            playlists: Duration::from_secs(10),
+            // /v1/now changes constantly, but Spotify's per-app quota is
+            // tight enough that a 3-second loop trips 429 within minutes —
+            // the leptos progress bar interpolates client-side anyway, so
+            // 10-second snapshot freshness is enough.
+            now: Duration::from_secs(10),
+            recent: Duration::from_secs(30),
+            // Spotify recomputes top/profile/playlists on the order of
+            // hours-to-days; 5 minutes is already an order of magnitude
+            // fresher than the source data ever changes.
+            top: Duration::from_secs(300),
+            profile: Duration::from_secs(300),
+            playlists: Duration::from_secs(300),
         }
     }
 }
