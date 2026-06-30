@@ -209,10 +209,19 @@ fn map_playlist_item(p: &Value) -> Value {
         .and_then(|o| o.get("display_name"))
         .and_then(Value::as_str)
         .unwrap_or("");
+    // Spotify deprecated `tracks` on SimplifiedPlaylistObject; the live
+    // `/v1/me/playlists` response now carries the real count under `items`
+    // and returns `tracks.total` as 0. Read `items` first, fall back to the
+    // legacy field so fixtures pinned to the old shape still work.
     let tracks_count = p
-        .get("tracks")
+        .get("items")
         .and_then(|t| t.get("total"))
         .and_then(Value::as_u64)
+        .or_else(|| {
+            p.get("tracks")
+                .and_then(|t| t.get("total"))
+                .and_then(Value::as_u64)
+        })
         .unwrap_or(0);
     let url = p
         .get("external_urls")

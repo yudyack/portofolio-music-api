@@ -276,6 +276,8 @@ async fn top_tracks_assigns_one_indexed_rank() {
 
 #[tokio::test]
 async fn playlists_returns_items_and_total() {
+    // Live Spotify shape: each playlist carries the count under `items.total`.
+    // `tracks` is deprecated and comes back as 0 in production.
     let playlists = json!({
         "total": 9,
         "items": [
@@ -283,7 +285,8 @@ async fn playlists_returns_items_and_total() {
                 "name": "Chill",
                 "owner": {"display_name": "Yudhya"},
                 "images": [{"url": "https://i/c.jpg"}],
-                "tracks": {"total": 42},
+                "items": {"total": 42},
+                "tracks": {"total": 0},
                 "external_urls": {"spotify": "https://open.spotify.com/playlist/xyz"}
             }
         ]
@@ -298,4 +301,25 @@ async fn playlists_returns_items_and_total() {
     assert_eq!(it["cover"], json!("https://i/c.jpg"));
     assert_eq!(it["tracks_count"], json!(42));
     assert_eq!(it["url"], json!("https://open.spotify.com/playlist/xyz"));
+}
+
+#[tokio::test]
+async fn playlists_falls_back_to_legacy_tracks_total() {
+    // If Spotify ever reverts and only the deprecated `tracks.total` is
+    // present, the count must still come through.
+    let playlists = json!({
+        "total": 1,
+        "items": [
+            {
+                "name": "Legacy",
+                "owner": {"display_name": "Yudhya"},
+                "images": [],
+                "tracks": {"total": 7},
+                "external_urls": {"spotify": "https://open.spotify.com/playlist/legacy"}
+            }
+        ]
+    });
+    let (router, _) = build_app(vec![("/v1/me/playlists?limit=20", playlists)]);
+    let (_, body) = get_body(&router, "/v1/playlists").await;
+    assert_eq!(body["items"][0]["tracks_count"], json!(7));
 }
