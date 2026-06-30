@@ -62,7 +62,7 @@ impl Default for SchedulerIntervals {
             // tight enough that a 3-second loop trips 429 within minutes —
             // the leptos progress bar interpolates client-side anyway, so
             // 10-second snapshot freshness is enough.
-            now: Duration::from_secs(10),
+            now: Duration::from_secs(5),
             recent: Duration::from_secs(30),
             // Spotify recomputes top/profile/playlists on the order of
             // hours-to-days; 5 minutes is already an order of magnitude
