@@ -11,6 +11,7 @@ use crate::config::Config;
 use crate::domain::auth_state::AuthState;
 use crate::domain::oauth_client::TokenExchanger;
 use crate::domain::spotify::SpotifyClient;
+use crate::domain::spotify_toggle::SpotifyToggle;
 use crate::domain::tokens::TokenRepository;
 
 #[derive(Clone)]
@@ -35,6 +36,11 @@ pub struct AppState {
     /// Activity gate for the schedulers. Middleware on `/v1/*` calls
     /// `touch()`; the schedulers park on `activity.woke` while idle.
     pub activity: Arc<ActivityTracker>,
+    /// Owner-flipped kill switch for outbound Spotify traffic. When
+    /// disabled, schedulers skip their fetch and `/v1/*` handlers serve
+    /// only the cached snapshot (or 503 if empty) without falling through
+    /// to a cold-start fetch. Resets to enabled on restart.
+    pub spotify_toggle: Arc<SpotifyToggle>,
 }
 
 impl AppState {
@@ -54,6 +60,7 @@ impl AppState {
         ));
         let snapshots = Arc::new(Snapshots::new());
         let activity = Arc::new(ActivityTracker::new(config.scheduler.idle_threshold));
+        let spotify_toggle = Arc::new(SpotifyToggle::new());
         Self {
             config,
             tokens,
@@ -64,6 +71,7 @@ impl AppState {
             spotify_service,
             snapshots,
             activity,
+            spotify_toggle,
         }
     }
 
