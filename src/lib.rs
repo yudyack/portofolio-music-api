@@ -256,13 +256,6 @@ pub fn app(state: AppState) -> Router {
         .merge(admin)
         .merge(v1)
         .with_state(state)
-        // Outermost layer — every request gets an id, every nested log
-        // line (CORS pass-through, wire_fe_layer in/out, handler, the
-        // outbound Spotify HTTP `LoggingMiddleware`) inherits the
-        // `id` span field via `tracing::Instrument`, and the response
-        // carries the id back in `x-request-id`. One greppable token
-        // ties together everything done on behalf of a single FE call.
-        .layer(from_fn(request_id_layer))
 }
 
 /// Middleware on `/v1/*` that records visitor activity for the scheduler
@@ -276,62 +269,6 @@ async fn v1_activity_layer(
 ) -> Response {
     state.activity.touch();
     next.run(request).await
-}
-
-/// Cap on inbound `X-Request-Id` length we'll accept. Beyond this we
-/// generate a fresh id instead. Pinned so a misbehaving client can't
-/// blow up the log fields.
-const REQUEST_ID_MAX_LEN: usize = 128;
-
-/// Validate an inbound `X-Request-Id`. Accept only ASCII alphanumerics
-/// and the two delimiters operators commonly use (`-`, `_`). Refusing
-/// other bytes keeps a hostile client from sneaking control characters
-/// or whitespace into log fields / terminals.
-fn is_valid_request_id(s: &str) -> bool {
-    !s.is_empty()
-        && s.len() <= REQUEST_ID_MAX_LEN
-        && s.bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-}
-
-/// Generate a 16-hex-char id (~64 bits of entropy). Tight enough for
-/// ops greppability; collision-resistant enough for a single-tenant
-/// service handling few requests per second.
-fn generate_request_id() -> String {
-    format!("{:016x}", rand::random::<u64>())
-}
-
-/// Outermost middleware. Three jobs:
-/// 1. Read inbound `x-request-id` if present + valid; otherwise generate
-///    a fresh id.
-/// 2. Instrument the rest of the request with a `tracing::info_span!(
-///    "request", id = %id)`. Every nested log line — `wire_fe_layer`,
-///    the handler's own tracing calls, the outbound Spotify HTTP
-///    `LoggingMiddleware` — automatically carries the id in its span
-///    field, so `grep 'id=<id>'` finds everything done on behalf of one
-///    FE call without per-call-site plumbing.
-/// 3. Echo the id back in `x-request-id` so the caller (and the leptos
-///    devtools tab) can correlate.
-async fn request_id_layer(request: Request, next: Next) -> Response {
-    use tracing::Instrument;
-
-    let id = request
-        .headers()
-        .get("x-request-id")
-        .and_then(|h| h.to_str().ok())
-        .filter(|s| is_valid_request_id(s))
-        .map(str::to_string)
-        .unwrap_or_else(generate_request_id);
-
-    let span = tracing::info_span!("request", id = %id);
-    let mut response = next.run(request).instrument(span).await;
-
-    // id is either a 16-hex string we generated or an inbound value that
-    // passed `is_valid_request_id` — both are pure ASCII alnum/-/_, all
-    // legal in a header value. `from_str` cannot fail here.
-    let value = http::HeaderValue::from_str(&id).expect("validated request_id charset");
-    response.headers_mut().insert("x-request-id", value);
-    response
 }
 
 /// FE-side wire logging — symmetric to the outbound HTTP
