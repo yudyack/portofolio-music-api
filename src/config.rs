@@ -63,7 +63,14 @@ impl Default for SchedulerIntervals {
             // the leptos progress bar interpolates client-side anyway, so
             // 10-second snapshot freshness is enough.
             now: Duration::from_secs(5),
-            recent: Duration::from_secs(30),
+            // Recently-played updates only after a track ends — minutes,
+            // not seconds. The previous 30 s was tight enough that prod
+            // logs showed a steady-state 429 loop on /me/player/recently-
+            // played (Spotify Retry-After: 60 vs scheduler interval 30 s),
+            // which then knocks the per-app rate-limit budget for every
+            // other endpoint sharing it. 5 minutes is fresher than the
+            // source data ever needs to be.
+            recent: Duration::from_secs(300),
             // Spotify recomputes top/profile/playlists on the order of
             // hours-to-days; 5 minutes is already an order of magnitude
             // fresher than the source data ever changes.
