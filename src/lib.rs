@@ -149,6 +149,10 @@ struct Health {
     /// this and renders a "MOCK DATA" banner. Always serialised so the
     /// absence is unambiguously "real Spotify data, not just absent flag".
     mock_mode: bool,
+    /// Current state of the owner-flipped Spotify kill switch. False means
+    /// schedulers and the cold-start fetch path are skipping their Spotify
+    /// calls; the leptos frontend reads this to render a "paused" banner.
+    spotify_enabled: bool,
 }
 
 async fn healthz(State(state): State<AppState>) -> Json<Health> {
@@ -171,6 +175,7 @@ async fn healthz(State(state): State<AppState>) -> Json<Health> {
         token_state,
         last_fetch_ts: None,
         mock_mode: state.config.mock_data,
+        spotify_enabled: state.spotify_toggle.is_enabled(),
     })
 }
 
@@ -220,10 +225,31 @@ pub fn app(state: AppState) -> Router {
         .layer(from_fn(wire_fe_layer))
         .layer(cors_layer());
 
+    // Owner-only control plane. Routes share one auth layer
+    // (routes::admin::auth_layer) — the same constant-time Basic-auth
+    // check /auth/spotify/login uses. Centralizing the gate in a layer
+    // (rather than re-checking it in each handler) means a future
+    // /admin/* route added to this sub-router can't accidentally ship
+    // without auth. Outside the v1 CORS layer — admin lives on the
+    // same origin as the API, never cross-origin from the leptos
+    // frontend.
+    let admin = Router::new()
+        .route("/admin/spotify", get(routes::admin::get_spotify))
+        .route(
+            "/admin/spotify/enable",
+            axum::routing::post(routes::admin::enable_spotify),
+        )
+        .route(
+            "/admin/spotify/disable",
+            axum::routing::post(routes::admin::disable_spotify),
+        )
+        .layer(from_fn_with_state(state.clone(), routes::admin::auth_layer));
+
     Router::new()
         .route("/healthz", get(healthz))
         .route("/auth/spotify/login", get(routes::auth::login))
         .route("/auth/spotify/callback", get(routes::auth::callback))
+        .merge(admin)
         .merge(v1)
         .with_state(state)
 }

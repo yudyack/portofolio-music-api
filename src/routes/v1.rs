@@ -82,6 +82,14 @@ async fn serve(state: AppState, kind: EndpointKind) -> Response {
     if let Some(snapshot) = state.snapshots.get(kind) {
         return (StatusCode::OK, Json(snapshot)).into_response();
     }
+    // Snapshot empty. Normally we'd do ONE synchronous cold-start fetch
+    // here — but if the owner has flipped the Spotify kill switch, the
+    // whole point is to make no outbound calls. Surface a 503 so the
+    // frontend can render a "paused" state, symmetric to the needs_reauth
+    // branch above.
+    if !state.spotify_toggle.is_enabled() {
+        return spotify_paused();
+    }
     // Cold start — no scheduler tick has resolved yet. Do ONE synchronous
     // fetch + map (same code path the scheduler uses) and store it so the
     // next visitor lands on the cached snapshot. Concurrent cold-start
@@ -101,6 +109,14 @@ fn needs_reauth() -> Response {
     (
         StatusCode::SERVICE_UNAVAILABLE,
         Json(json!({"error": "needs_reauth"})),
+    )
+        .into_response()
+}
+
+fn spotify_paused() -> Response {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(json!({"error": "spotify_paused"})),
     )
         .into_response()
 }

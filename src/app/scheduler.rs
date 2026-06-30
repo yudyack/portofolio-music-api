@@ -63,6 +63,14 @@ pub fn spawn_one(state: AppState, kind: EndpointKind, interval: Duration) {
                 continue;
             }
 
+            if !state.spotify_toggle.is_enabled() {
+                // Owner-flipped kill switch. Same shape as the reauth
+                // branch — don't park (so re-enabling via /admin/spotify
+                // resumes within one interval), just sleep and re-check.
+                sleep(interval).await;
+                continue;
+            }
+
             match fetch_and_map(&state, kind).await {
                 Ok(v) => state.snapshots.set(kind, Some(v)),
                 Err(e) => tracing::warn!(?kind, error = %e, "scheduler tick failed"),

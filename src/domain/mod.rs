@@ -8,4 +8,5 @@
 pub mod auth_state;
 pub mod oauth_client;
 pub mod spotify;
+pub mod spotify_toggle;
 pub mod tokens;
