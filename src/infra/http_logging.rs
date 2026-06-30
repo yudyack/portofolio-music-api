@@ -6,16 +6,21 @@
 //! `get_json` log) each produce their own request+response pair.
 //!
 //! Logs at info: method, URL, status, response content-length, elapsed
-//! milliseconds. Does NOT log headers (carries the bearer / Basic
-//! credential) or the body (carries Spotify content / OAuth tokens —
+//! milliseconds. Does NOT log REQUEST headers (carries the bearer / Basic
+//! credential) or any body (carries Spotify content / OAuth tokens —
 //! redaction context lives at the application layer in
 //! `spotify_client.rs` / `token_exchanger.rs`).
+//!
+//! Response headers ARE logged on HTTP 429 only, so an operator can see
+//! `Retry-After` (and any Spotify-side rate-limit hints) without enabling
+//! verbose wire-body tracing. Spotify response headers do not carry our
+//! credentials.
 
 use std::time::Instant;
 
 use async_trait::async_trait;
 use http::Extensions;
-use reqwest::{Request, Response};
+use reqwest::{header::HeaderMap, Request, Response, StatusCode};
 use reqwest_middleware::{Middleware, Next};
 
 /// Reusable middleware. Each client constructs one with its preferred
@@ -60,14 +65,20 @@ impl Middleware for LoggingMiddleware {
         let elapsed_ms = started.elapsed().as_millis() as u64;
 
         match &outcome {
-            Ok(resp) => emit_response(
-                self.target,
-                &method,
-                &url,
-                resp.status().as_u16(),
-                resp.content_length(),
-                elapsed_ms,
-            ),
+            Ok(resp) => {
+                let status = resp.status();
+                if status == StatusCode::TOO_MANY_REQUESTS {
+                    emit_429_headers(self.target, &method, &url, resp.headers());
+                }
+                emit_response(
+                    self.target,
+                    &method,
+                    &url,
+                    status.as_u16(),
+                    resp.content_length(),
+                    elapsed_ms,
+                );
+            }
             Err(e) => emit_transport_error(self.target, &method, &url, e, elapsed_ms),
         }
         outcome
@@ -160,6 +171,51 @@ fn emit_response(
             "outbound http response",
         ),
     }
+}
+
+fn emit_429_headers(
+    target: WireTarget,
+    method: &reqwest::Method,
+    url: &reqwest::Url,
+    headers: &HeaderMap,
+) {
+    let formatted = format_headers(headers);
+    match target {
+        WireTarget::SpotifyHttp => warn_with_target!(
+            "music_api::wire::spotify_http",
+            direction = "←",
+            method = %method,
+            url = %url,
+            status = 429u16,
+            headers = %formatted,
+            "outbound http 429 response headers (read Retry-After)",
+        ),
+        WireTarget::SpotifyOAuthHttp => warn_with_target!(
+            "music_api::wire::spotify_oauth_http",
+            direction = "←",
+            method = %method,
+            url = %url,
+            status = 429u16,
+            headers = %formatted,
+            "outbound http 429 response headers (read Retry-After)",
+        ),
+    }
+}
+
+fn format_headers(headers: &HeaderMap) -> String {
+    let mut out = String::new();
+    for (name, value) in headers {
+        if !out.is_empty() {
+            out.push_str(", ");
+        }
+        out.push_str(name.as_str());
+        out.push_str(": ");
+        match value.to_str() {
+            Ok(s) => out.push_str(s),
+            Err(_) => out.push_str("<non-ascii>"),
+        }
+    }
+    out
 }
 
 fn emit_transport_error(
