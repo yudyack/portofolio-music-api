@@ -174,7 +174,10 @@ async fn now_with_204_returns_playing_false_200() {
     );
     let (status, body) = get(&router, "/v1/now").await;
     assert_eq!(status, StatusCode::OK, "criterion 17: 204 must NOT be 500");
-    assert_eq!(body, json!({"playing": false}));
+    // Field-level — the 200 path also carries refresh_ms (the wire
+    // contract pinned by tests/refresh_ms_in_payload.rs). Whole-shape
+    // equality would break any time the payload grows.
+    assert_eq!(body["playing"], json!(false));
 }
 
 #[tokio::test]
