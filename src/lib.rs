@@ -149,6 +149,10 @@ struct Health {
     /// this and renders a "MOCK DATA" banner. Always serialised so the
     /// absence is unambiguously "real Spotify data, not just absent flag".
     mock_mode: bool,
+    /// Current state of the owner-flipped Spotify kill switch. False means
+    /// schedulers and the cold-start fetch path are skipping their Spotify
+    /// calls; the leptos frontend reads this to render a "paused" banner.
+    spotify_enabled: bool,
 }
 
 async fn healthz(State(state): State<AppState>) -> Json<Health> {
@@ -171,6 +175,7 @@ async fn healthz(State(state): State<AppState>) -> Json<Health> {
         token_state,
         last_fetch_ts: None,
         mock_mode: state.config.mock_data,
+        spotify_enabled: state.spotify_toggle.is_enabled(),
     })
 }
 
@@ -224,6 +229,19 @@ pub fn app(state: AppState) -> Router {
         .route("/healthz", get(healthz))
         .route("/auth/spotify/login", get(routes::auth::login))
         .route("/auth/spotify/callback", get(routes::auth::callback))
+        // Owner-only control plane. Same Basic-auth + constant-time check
+        // as /auth/spotify/login (routes::auth::basic_auth_ok). Outside
+        // the v1 CORS layer — admin lives on the same origin as the API,
+        // never cross-origin from the leptos frontend.
+        .route("/admin/spotify", get(routes::admin::get_spotify))
+        .route(
+            "/admin/spotify/enable",
+            axum::routing::post(routes::admin::enable_spotify),
+        )
+        .route(
+            "/admin/spotify/disable",
+            axum::routing::post(routes::admin::disable_spotify),
+        )
         .merge(v1)
         .with_state(state)
 }

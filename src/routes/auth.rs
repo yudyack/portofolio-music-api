@@ -20,7 +20,7 @@ use crate::AppState;
 
 const REALM: &str = "Basic realm=\"music-api\"";
 
-fn unauthorized() -> Response {
+pub(crate) fn unauthorized() -> Response {
     (
         StatusCode::UNAUTHORIZED,
         [(header::WWW_AUTHENTICATE, REALM)],
@@ -31,7 +31,12 @@ fn unauthorized() -> Response {
 
 /// Constant-time Basic-auth check against config (criterion 23). Username
 /// is compared plainly; the password goes through `subtle::ConstantTimeEq`.
-fn basic_auth_ok(config: &Config, auth: &Option<TypedHeader<Authorization<Basic>>>) -> bool {
+/// Shared with `routes::admin` so both owner-gated surfaces flow through
+/// the same constant-time path — no second auth implementation to drift.
+pub(crate) fn basic_auth_ok(
+    config: &Config,
+    auth: &Option<TypedHeader<Authorization<Basic>>>,
+) -> bool {
     let Some(TypedHeader(Authorization(basic))) = auth else {
         return false;
     };
