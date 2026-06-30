@@ -146,9 +146,19 @@ async fn fetch_profile(state: &AppState) -> Result<Value, FetchError> {
         Ok(Some(v)) => v1_mapper::total_in(&v.get("artists").cloned().unwrap_or(Value::Null)),
         _ => 0,
     };
-    let playlists_count = match state.spotify_service.get("/v1/me/playlists?limit=1").await {
-        Ok(Some(v)) => v1_mapper::total_in(&v),
-        _ => 0,
+    // Reuse the playlists snapshot's `total` when it's populated, so we
+    // don't spend a separate `/v1/me/playlists?limit=1` call against
+    // Spotify's tight per-app quota on every profile tick. The mapped
+    // shape from `v1_mapper::map_playlists` always carries `total`. On
+    // cold start (snapshot still empty before the first playlists tick)
+    // we fall back to the lightweight count call so the very first
+    // /v1/profile request doesn't degrade to 0.
+    let playlists_count = match state.snapshots.get(EndpointKind::Playlists) {
+        Some(v) => v1_mapper::total_in(&v),
+        None => match state.spotify_service.get("/v1/me/playlists?limit=1").await {
+            Ok(Some(v)) => v1_mapper::total_in(&v),
+            _ => 0,
+        },
     };
     Ok(v1_mapper::map_profile(&me, following, playlists_count))
 }
