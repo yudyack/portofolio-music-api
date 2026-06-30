@@ -94,7 +94,8 @@ pub(crate) async fn fetch_and_map(
         EndpointKind::Profile => fetch_profile(state).await?,
         EndpointKind::Playlists => fetch_playlists(state).await?,
     };
-    Ok(tag_mock(state, payload))
+    let payload = tag_mock(state, payload);
+    Ok(tag_refresh(state, kind, payload))
 }
 
 /// Tag the payload with `_mock: true` when running with `MOCK_DATA=1`.
@@ -107,6 +108,29 @@ fn tag_mock(state: &AppState, mut payload: Value) -> Value {
         }
     }
     payload
+}
+
+/// Inject the per-endpoint scheduler interval as `refresh_ms` so the
+/// leptos frontend can match its polling cadence and extrapolate values
+/// between snapshots (e.g. interpolate the now-playing progress bar).
+/// Always serialised — the FE relies on its presence to derive timing
+/// rather than guessing.
+fn tag_refresh(state: &AppState, kind: EndpointKind, mut payload: Value) -> Value {
+    let ms = interval_for(kind, &state.config.scheduler.intervals).as_millis() as u64;
+    if let Some(obj) = payload.as_object_mut() {
+        obj.insert("refresh_ms".to_string(), Value::from(ms));
+    }
+    payload
+}
+
+fn interval_for(kind: EndpointKind, i: &crate::config::SchedulerIntervals) -> Duration {
+    match kind {
+        EndpointKind::Now => i.now,
+        EndpointKind::Recent => i.recent,
+        EndpointKind::Top => i.top,
+        EndpointKind::Profile => i.profile,
+        EndpointKind::Playlists => i.playlists,
+    }
 }
 
 async fn fetch_now(state: &AppState) -> Result<Value, FetchError> {
