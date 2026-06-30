@@ -43,9 +43,9 @@ impl ReqwestSpotifyClient {
     /// burst with 1 cell / s replenishment (so a 30-call burst is paced
     /// to ~30 calls per rolling 30 s steady state).
     pub fn new(base_url: String) -> Result<Self, SpotifyError> {
-        let quota = Quota::with_period(Duration::from_secs(1))
-            .expect("1 s is non-zero")
-            .allow_burst(NonZeroU32::new(30).expect("30 is non-zero"));
+        let quota = Quota::with_period(Duration::from_millis(1500))
+            .expect("1500 ms is non-zero")
+            .allow_burst(NonZeroU32::new(20).expect("20 is non-zero"));
         Self::with_quota(base_url, quota)
     }
 

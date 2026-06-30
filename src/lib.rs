@@ -243,6 +243,10 @@ pub fn app(state: AppState) -> Router {
             "/admin/spotify/disable",
             axum::routing::post(routes::admin::disable_spotify),
         )
+        .route(
+            "/admin/spotify/refresh/{kind}",
+            axum::routing::post(routes::admin::refresh_spotify),
+        )
         .layer(from_fn_with_state(state.clone(), routes::admin::auth_layer));
 
     Router::new()
