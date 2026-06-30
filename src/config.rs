@@ -60,7 +60,7 @@ impl Default for SchedulerIntervals {
         Self {
             // /v1/now changes constantly — keep it fresh.
             now: Duration::from_secs(3),
-            recent: Duration::from_secs(10),
+            recent: Duration::from_secs(3),
             // Spotify recomputes top/profile/playlists slowly.
             top: Duration::from_secs(10),
             profile: Duration::from_secs(10),
