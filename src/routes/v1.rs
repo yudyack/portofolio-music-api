@@ -69,6 +69,11 @@ pub async fn playlists(State(state): State<AppState>) -> Response {
 }
 
 // ---- shared 3-step handler ---------------------------------------------
+//
+// Inbound request + outbound response logging is handled uniformly by
+// the `wire_fe_layer` axum middleware in `lib::app`. Handlers here just
+// return `(StatusCode, Json(...))` and let the layer log + measure the
+// final wire shape.
 
 async fn serve(state: AppState, kind: EndpointKind) -> Response {
     if state.auth_state.needs_reauth() {

@@ -9,17 +9,19 @@
 //! `ReqwestSpotifyClient` wraps its data client.
 
 use async_trait::async_trait;
-use reqwest::{Client, StatusCode};
+use reqwest::StatusCode;
+use reqwest_middleware::ClientWithMiddleware;
 use serde::Deserialize;
 
 use crate::domain::oauth_client::{RefreshedTokens, TokenExchangeError, TokenExchanger};
+use crate::infra::http_logging::{LoggingMiddleware, WireTarget};
 
 pub struct ReqwestTokenExchanger {
     /// Full token endpoint, e.g. `https://accounts.spotify.com/api/token`.
     token_url: String,
     client_id: String,
     client_secret: String,
-    client: Client,
+    client: ClientWithMiddleware,
 }
 
 impl ReqwestTokenExchanger {
@@ -28,9 +30,16 @@ impl ReqwestTokenExchanger {
         client_id: String,
         client_secret: String,
     ) -> Result<Self, TokenExchangeError> {
-        let client = Client::builder()
+        // Wrap the OAuth client in a `ClientWithMiddleware` so the
+        // unified `LoggingMiddleware` fires here too. The chain is
+        // just logging (no pacing / retry): token refreshes are rare
+        // and target a different host than the data API.
+        let raw = reqwest::Client::builder()
             .build()
             .map_err(|e| TokenExchangeError::Transport(e.to_string()))?;
+        let client = reqwest_middleware::ClientBuilder::new(raw)
+            .with(LoggingMiddleware::new(WireTarget::SpotifyOAuthHttp))
+            .build();
         Ok(Self {
             token_url,
             client_id,
@@ -52,13 +61,36 @@ struct TokenResponseDto {
     scope: Option<String>,
 }
 
+/// Mask a token-like string for logging. The length is emitted as a
+/// rotation signal (a refresh that changes token length is observable);
+/// no token bytes are exposed. Matches the repo's `<redacted>` precedent
+/// (`Config::Debug` in `src/config.rs`, pinned by `tests/debug_redaction.rs`).
+pub(crate) fn mask_token(s: &str) -> String {
+    format!("<redacted len={}>", s.len())
+}
+
 impl ReqwestTokenExchanger {
     /// POST the form to the token endpoint and map the response. Shared by
-    /// both grants — only the form fields differ.
+    /// both grants — only the form fields differ. `grant_type` is passed
+    /// explicitly (rather than rescanned from the form) so a future caller
+    /// that forgets to put it on the wire fails type-checking, not by
+    /// emitting an empty `grant_type` field in the log.
     async fn post_token(
         &self,
+        grant_type: &'static str,
         form: &[(&str, &str)],
     ) -> Result<RefreshedTokens, TokenExchangeError> {
+        // Outbound HTTP log (URL + POST + elapsed) is emitted by
+        // LoggingMiddleware on the wrapped client below. App-layer log
+        // here adds OAuth semantics (the grant_type) that the generic
+        // middleware doesn't see.
+        tracing::info!(
+            target: "music_api::wire::spotify_oauth",
+            direction = "→",
+            grant_type = grant_type,
+            "spotify oauth request",
+        );
+
         let resp = self
             .client
             .post(&self.token_url)
@@ -76,12 +108,41 @@ impl ReqwestTokenExchanger {
                 .json()
                 .await
                 .map_err(|e| TokenExchangeError::Decode(e.to_string()))?;
-            if body.get("error").and_then(|e| e.as_str()) == Some("invalid_grant") {
+            // Per RFC 6749 §5.2 the body's `error_description` may echo
+            // offending grant material (e.g. the authorization code).
+            // Log only the parsed `error` discriminant — diagnostic and
+            // PII/secret-free.
+            let error_kind = body
+                .get("error")
+                .and_then(|e| e.as_str())
+                .unwrap_or("<unknown>");
+            tracing::warn!(
+                target: "music_api::wire::spotify_oauth",
+                direction = "←",
+                status = 400,
+                error = %error_kind,
+                "spotify oauth response (bad request)",
+            );
+            if error_kind == "invalid_grant" {
                 return Err(TokenExchangeError::InvalidGrant);
             }
             return Err(TokenExchangeError::Status(400));
         }
         if !status.is_success() {
+            // Capture a capped body preview for 401/5xx diagnosis. Token-
+            // endpoint error envelopes are diagnostic strings only (no
+            // user PII); 256 chars is enough for `invalid_client` style
+            // shapes and defends against unbounded edge responses.
+            let body = resp.text().await.unwrap_or_default();
+            let body_preview: String = body.chars().take(256).collect();
+            tracing::warn!(
+                target: "music_api::wire::spotify_oauth",
+                direction = "←",
+                status = status.as_u16(),
+                bytes = body.len(),
+                body_preview = %body_preview,
+                "spotify oauth response (error)",
+            );
             return Err(TokenExchangeError::Status(status.as_u16()));
         }
 
@@ -89,6 +150,20 @@ impl ReqwestTokenExchanger {
             .json()
             .await
             .map_err(|e| TokenExchangeError::Decode(e.to_string()))?;
+        tracing::info!(
+            target: "music_api::wire::spotify_oauth",
+            direction = "←",
+            status = status.as_u16(),
+            access_token = %mask_token(&dto.access_token),
+            refresh_token = %dto
+                .refresh_token
+                .as_deref()
+                .map(mask_token)
+                .unwrap_or_else(|| "<absent>".to_string()),
+            expires_in = dto.expires_in,
+            scope = dto.scope.as_deref().unwrap_or(""),
+            "spotify oauth response",
+        );
         Ok(RefreshedTokens {
             access_token: dto.access_token,
             refresh_token: dto.refresh_token,
@@ -98,13 +173,67 @@ impl ReqwestTokenExchanger {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    //! Pin the redaction invariant added by this PR. A future refactor that
+    //! drops the `<redacted>` marker or re-introduces a plaintext prefix
+    //! must fail compile/test, not silently in prod logs. Mirrors the
+    //! Config::Debug pattern in `tests/debug_redaction.rs`.
+    use super::mask_token;
+
+    const TOKEN_SENTINEL: &str = "S3CR3T-ACCESS-TOKEN-SHOULD-NEVER-APPEAR-IN-FULL-XYZ";
+
+    #[test]
+    fn mask_token_does_not_contain_full_input() {
+        let out = mask_token(TOKEN_SENTINEL);
+        assert!(
+            !out.contains(TOKEN_SENTINEL),
+            "mask_token must not echo its input. Got:\n{out}",
+        );
+        // Defend against a future refactor re-introducing a prefix: no
+        // contiguous 6-char slice of the sentinel may appear in the output.
+        for i in 0..=TOKEN_SENTINEL.len() - 6 {
+            let slice = &TOKEN_SENTINEL[i..i + 6];
+            assert!(
+                !out.contains(slice),
+                "mask_token leaked a 6-char slice {slice:?} of the input. Got:\n{out}",
+            );
+        }
+    }
+
+    #[test]
+    fn mask_token_uses_redacted_marker() {
+        let out = mask_token("anything");
+        assert!(
+            out.contains("<redacted"),
+            "mask_token must mark redacted output with the literal \"<redacted\" \
+             so a future Debug-style refactor cannot silently un-redact. Got:\n{out}",
+        );
+    }
+
+    #[test]
+    fn mask_token_preserves_length_signal() {
+        // Spotify access tokens are typically 43 chars; the length is the
+        // rotation-diagnostic value the masked form must preserve.
+        let input = "x".repeat(43);
+        let out = mask_token(&input);
+        assert!(
+            out.contains("len=43"),
+            "mask_token must surface the length as `len=N`. Got:\n{out}",
+        );
+    }
+}
+
 #[async_trait]
 impl TokenExchanger for ReqwestTokenExchanger {
     async fn refresh(&self, refresh_token: &str) -> Result<RefreshedTokens, TokenExchangeError> {
-        self.post_token(&[
-            ("grant_type", "refresh_token"),
-            ("refresh_token", refresh_token),
-        ])
+        self.post_token(
+            "refresh_token",
+            &[
+                ("grant_type", "refresh_token"),
+                ("refresh_token", refresh_token),
+            ],
+        )
         .await
     }
 
@@ -113,11 +242,14 @@ impl TokenExchanger for ReqwestTokenExchanger {
         code: &str,
         redirect_uri: &str,
     ) -> Result<RefreshedTokens, TokenExchangeError> {
-        self.post_token(&[
-            ("grant_type", "authorization_code"),
-            ("code", code),
-            ("redirect_uri", redirect_uri),
-        ])
+        self.post_token(
+            "authorization_code",
+            &[
+                ("grant_type", "authorization_code"),
+                ("code", code),
+                ("redirect_uri", redirect_uri),
+            ],
+        )
         .await
     }
 }

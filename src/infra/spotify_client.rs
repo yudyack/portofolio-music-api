@@ -28,6 +28,7 @@ use governor::{Quota, RateLimiter};
 use reqwest_middleware::ClientWithMiddleware;
 
 use crate::domain::spotify::{SpotifyClient, SpotifyError};
+use crate::infra::http_logging::{LoggingMiddleware, WireTarget};
 use crate::infra::spotify_backoff::{BackoffConfig, BackoffMiddleware};
 use crate::infra::spotify_governor::GovernorMiddleware;
 use crate::infra::spotify_retry::RetryAfterMiddleware;
@@ -77,7 +78,12 @@ impl ReqwestSpotifyClient {
             // governor so each backoff retry consumes a fresh token
             // (criterion 9 layering invariant).
             .with(BackoffMiddleware::new(backoff))
-            // Third .with() → innermost: every attempt (initial OR any
+            // Third .with() → per-attempt logging. Inside the retry
+            // middlewares above so 429/5xx retries each produce their own
+            // outbound+response log pair (closes architect F3). Outside
+            // the governor so the log fires just before the actual send.
+            .with(LoggingMiddleware::new(WireTarget::SpotifyHttp))
+            // Fourth .with() → innermost: every attempt (initial OR any
             // retry) acquires a fresh governor permit before reqwest sees
             // the request.
             .with(GovernorMiddleware { limiter })
@@ -94,6 +100,9 @@ impl SpotifyClient for ReqwestSpotifyClient {
         access_token: &str,
     ) -> Result<Option<serde_json::Value>, SpotifyError> {
         let url = format!("{}{}", self.base_url, path);
+        // Outbound request log is emitted by LoggingMiddleware (per
+        // attempt, including retries). Application-level logs below
+        // carry the body — middleware never reads or logs it.
         let response = self
             .client
             .get(&url)
@@ -103,17 +112,45 @@ impl SpotifyClient for ReqwestSpotifyClient {
             .map_err(|e| SpotifyError::Transport(e.to_string()))?;
         let status = response.status();
         if !status.is_success() {
+            // Error envelopes (`{"error":{"status":..,"message":..}}`) are
+            // load-bearing for diagnosing 401/403/429 but uncapped foreign
+            // bytes off an edge CDN are not — cap the prefix at 256 chars.
+            let body = response.text().await.unwrap_or_default();
+            let body_preview: String = body.chars().take(256).collect();
+            tracing::warn!(
+                target: "music_api::wire::spotify",
+                direction = "←",
+                url = %url,
+                status = status.as_u16(),
+                bytes = body.len(),
+                body_preview = %body_preview,
+                "spotify response (error)",
+            );
             return Err(SpotifyError::Status(status.as_u16()));
         }
         // 204 No Content — Spotify's "nothing playing" signal for
-        // /me/player. Distinct from 200 with a JSON `null` body.
+        // /me/player. Distinct from 200 with a JSON `null` body. The
+        // status itself is logged by LoggingMiddleware; no body to
+        // emit at the app layer.
         if status.as_u16() == 204 {
             return Ok(None);
         }
-        response
+        let body = response
             .json::<serde_json::Value>()
             .await
-            .map(Some)
-            .map_err(|e| SpotifyError::Decode(e.to_string()))
+            .map_err(|e| SpotifyError::Decode(e.to_string()))?;
+        // Body at debug — opt-in via RUST_LOG=music_api::wire=debug. The
+        // default `info` deploy must not stream Spotify response bodies
+        // (PII + ai-spotify.md "do not cache Spotify content beyond what
+        // is needed for immediate use").
+        tracing::debug!(
+            target: "music_api::wire::spotify",
+            direction = "←",
+            url = %url,
+            status = status.as_u16(),
+            body = %body,
+            "spotify response",
+        );
+        Ok(Some(body))
     }
 }

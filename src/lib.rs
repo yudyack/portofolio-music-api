@@ -8,12 +8,13 @@ pub mod state;
 
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use axum::body::Body;
 use axum::extract::{Request, State};
-use axum::http::{HeaderValue, Method};
-use axum::middleware::{from_fn_with_state, Next};
-use axum::response::Response;
+use axum::http::{HeaderValue, Method, StatusCode};
+use axum::middleware::{from_fn, from_fn_with_state, Next};
+use axum::response::{IntoResponse, Response};
 use axum::{routing::get, Json, Router};
 use serde::Serialize;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
@@ -210,6 +211,13 @@ pub fn app(state: AppState) -> Router {
         // handler resolves; every successful or failed /v1/* hit touches
         // the tracker.
         .layer(from_fn_with_state(state.clone(), v1_activity_layer))
+        // Unified FE-side wire logging — symmetric to the outbound HTTP
+        // LoggingMiddleware. Every /v1/* request and response is logged
+        // here so handlers don't carry per-call `tracing::info!` macros.
+        // Outside the activity gate so the inbound log fires before any
+        // app-level effects (activity touch); inside CORS so preflights
+        // are not logged.
+        .layer(from_fn(wire_fe_layer))
         .layer(cors_layer());
 
     Router::new()
@@ -231,6 +239,70 @@ async fn v1_activity_layer(
 ) -> Response {
     state.activity.touch();
     next.run(request).await
+}
+
+/// FE-side wire logging — symmetric to the outbound HTTP
+/// `LoggingMiddleware`. Logs every `/v1/*` request at info, the response
+/// body at debug (gated by `WIRE_BODIES=1`), and a status + bytes +
+/// elapsed_ms summary at info. The body is buffered so the debug line
+/// can carry it; for the JSON payloads this service returns (low-tens
+/// of KB), buffering is cheap.
+async fn wire_fe_layer(request: Request, next: Next) -> Response {
+    let method = request.method().clone();
+    let path = request.uri().path().to_string();
+    tracing::info!(
+        target: "music_api::wire::fe",
+        direction = "→",
+        method = %method,
+        path = %path,
+        "frontend request",
+    );
+
+    let started = Instant::now();
+    let response = next.run(request).await;
+    let status = response.status().as_u16();
+    let elapsed_ms = started.elapsed().as_millis() as u64;
+
+    let (parts, body) = response.into_parts();
+    // 10 MB ceiling — well above any legitimate /v1/* JSON payload and
+    // tight enough that a runaway response can't pin the process. If a
+    // future handler streams a large response, this layer is the wrong
+    // tool and should be skipped for that route.
+    let bytes = match axum::body::to_bytes(body, 10 * 1024 * 1024).await {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(
+                target: "music_api::wire::fe",
+                error = %e,
+                method = %method,
+                path = %path,
+                "failed to buffer fe response body for logging",
+            );
+            return (StatusCode::INTERNAL_SERVER_ERROR, "log buffer failed").into_response();
+        }
+    };
+
+    tracing::debug!(
+        target: "music_api::wire::fe",
+        direction = "←",
+        method = %method,
+        path = %path,
+        status = status,
+        body = %String::from_utf8_lossy(&bytes),
+        "frontend response (body)",
+    );
+    tracing::info!(
+        target: "music_api::wire::fe",
+        direction = "←",
+        method = %method,
+        path = %path,
+        status = status,
+        bytes = bytes.len(),
+        elapsed_ms = elapsed_ms,
+        "frontend response",
+    );
+
+    Response::from_parts(parts, Body::from(bytes))
 }
 
 fn cors_layer() -> CorsLayer {
