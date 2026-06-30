@@ -62,7 +62,7 @@ impl Default for SchedulerIntervals {
             // tight enough that a 3-second loop trips 429 within minutes —
             // the leptos progress bar interpolates client-side anyway, so
             // 10-second snapshot freshness is enough.
-            now: Duration::from_secs(5),
+            now: Duration::from_secs(7),
             // Recently-played updates only after a track ends — minutes,
             // not seconds. The previous 30 s was tight enough that prod
             // logs showed a steady-state 429 loop on /me/player/recently-
