@@ -19,6 +19,7 @@ axum-extra = { version = "0.10", features = ["typed-header"] }
 dotenvy = "0.15"
 subtle = "2"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+chrono-tz = { version = "0.10", default-features = false }
 governor = "0.7"
 http = "1"
 rand = "0.8"
