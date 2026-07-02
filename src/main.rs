@@ -1,5 +1,18 @@
 use tracing_subscriber::EnvFilter;
 
+/// Timestamp formatter that emits `Asia/Jakarta` (WIB, UTC+7) on every log
+/// line — matches the ISO 8601 shape tracing-subscriber's default emits,
+/// swapping the `Z` suffix for `+07:00`. Uses `chrono-tz`'s bundled IANA
+/// data so no `TZ` env var / tzdata package in the container is required.
+struct WibTimer;
+
+impl tracing_subscriber::fmt::time::FormatTime for WibTimer {
+    fn format_time(&self, w: &mut tracing_subscriber::fmt::format::Writer<'_>) -> std::fmt::Result {
+        let now = chrono::Utc::now().with_timezone(&chrono_tz::Asia::Jakarta);
+        write!(w, "{}", now.format("%Y-%m-%dT%H:%M:%S%.6f%:z"))
+    }
+}
+
 #[tokio::main]
 async fn main() {
     // Load a local .env if present (dev convenience; no-op in prod).
@@ -24,7 +37,10 @@ async fn main() {
         base
     };
     let filter = EnvFilter::try_new(&filter_str).unwrap_or_else(|_| EnvFilter::new("info"));
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_timer(WibTimer)
+        .init();
 
     // Cycle 7: all startup work lives in music_api::init() — config parse,
     // sqlite connect (WAL + busy_timeout), migrations (criterion 21),
